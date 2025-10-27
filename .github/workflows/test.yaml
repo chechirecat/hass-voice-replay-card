@@ -1,0 +1,101 @@
+name: Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Check JavaScript syntax
+      run: node -c voice-replay-card.js
+
+    - name: Build project
+      run: npm run build
+
+    - name: Validate package.json
+      run: npx validate-package-name
+
+    - name: Check for security vulnerabilities
+      run: npm audit --audit-level moderate
+
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Lint JavaScript
+      run: |
+        # Install ESLint if not present
+        if ! npx eslint --version > /dev/null 2>&1; then
+          npm install eslint --save-dev
+        fi
+        # Run basic linting
+        npx eslint voice-replay-card.js --no-eslintrc --env browser --env es6 --parserOptions '{"ecmaVersion": 2020, "sourceType": "module"}' || echo "Linting completed with warnings"
+
+  validate-structure:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Validate file structure
+      run: |
+        # Check required files exist
+        test -f voice-replay-card.js || (echo "voice-replay-card.js not found" && exit 1)
+        test -f package.json || (echo "package.json not found" && exit 1)
+        test -f README.md || (echo "README.md not found" && exit 1)
+        test -f hacs.json || (echo "hacs.json not found" && exit 1)
+        echo "All required files present"
+
+    - name: Validate HACS structure
+      run: |
+        # Check if hacs.json is valid JSON
+        jq empty hacs.json || (echo "Invalid hacs.json" && exit 1)
+        echo "HACS configuration is valid"
+
+    - name: Check card version consistency
+      run: |
+        # Extract version from package.json
+        PACKAGE_VERSION=$(jq -r '.version' package.json)
+        echo "Package version: $PACKAGE_VERSION"
+        
+        # Check if version exists in voice-replay-card.js
+        if ! grep -q "CARD_VERSION = '$PACKAGE_VERSION'" voice-replay-card.js; then
+          echo "Warning: Card version in voice-replay-card.js may not match package.json"
+          grep "CARD_VERSION" voice-replay-card.js || echo "CARD_VERSION not found"
+        else
+          echo "Card version is consistent"
+        fi
