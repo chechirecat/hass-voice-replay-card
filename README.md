@@ -1,12 +1,66 @@
 # Voice Replay Card
 
 [![GitHub Release](https://img.shields.io/github/release/chechirecat/hass-voice-replay-card.svg?style=flat-square)](https://github.com/chechirecat/hass-voice-replay-card/releases)
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/chechirecat/hass-voice-replay-card/test.yaml?style=flat-square&logo=github-actions)](https://github.com/chechirecat/hass-voice-replay-card/actions)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=flat-square)](https://hacs.xyz/docs/faq/custom_repositories)
 [![License](https://img.shields.io/github/license/chechirecat/hass-voice-replay-card.svg?style=flat-square)](LICENSE)
 
 🎨 A beautiful Lovelace card for the Voice Replay Home Assistant integration.
 
+## Installation
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=chechirecat&repository=hass-voice-replay-card&category=plugin)
+
+### HACS (Recommended)
+
+1. **Install via HACS Button:**
+
+   - Click the badge above, or
+   - Manually add this repository URL to HACS: `https://github.com/chechirecat/hass-voice-replay-card`
+
+2. **Download the card:**
+
+   - Open HACS → Frontend
+   - Search for "Voice Replay Card"
+   - Click "Download"
+
+3. **Restart and clear cache:**
+
+   - Restart Home Assistant
+   - Clear browser cache (Ctrl+Shift+R)
+
+### Manual Installation
+
+[![Download from GitHub Releases](https://img.shields.io/badge/Download-Latest%20Release-blue?style=for-the-badge&logo=github)](https://github.com/chechirecat/hass-voice-replay-card/releases/latest)
+
+1. **Download the file:**
+
+   - Click the "Download Latest Release" button above
+   - Download `voice-replay-card.js`
+
+2. **Copy to Home Assistant:**
+
+   - Place the file in `<config>/www/voice-replay-card.js`
+
+3. **Add resource:**
+
+   - Go to Settings → Dashboards → Resources  
+   - Add Resource: `/local/voice-replay-card.js` (JavaScript Module)
+
+4. **Restart and clear cache:**
+
+   - Restart Home Assistant
+   - Clear browser cache (Ctrl+Shift+R)
+
 ![Voice Replay Card Preview](screenshots/voice-replay-card.png)
+
+## Prerequisites
+
+⚠️ **Required Integration:** This card requires the Voice Replay integration to be installed first.
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=chechirecat&repository=hass-voice-replay&category=integration)
+
+**[Install Voice Replay Integration →](https://github.com/chechirecat/hass-voice-replay)**
 
 ## Features
 
@@ -17,36 +71,21 @@
 🏠 **Multi-Room Audio** - Play on any media player in your home  
 ⚙️ **Configurable** - Customize appearance and default settings  
 
-## Prerequisites
+## Quick Start
 
-**Required:** You must have the Voice Replay integration installed first:
-👉 **[Voice Replay Integration](https://github.com/chechirecat/hass-voice-replay)**
+1. **Add to your dashboard:**
+   - Edit dashboard → Add Card → Search "Voice Replay Card"
 
-## Installation
+2. **Basic card config:**
+   ```yaml
+   type: custom:voice-replay-card
+   title: Voice Replay
+   ```
 
-### HACS (Recommended)
-
-1. Make sure you have HACS installed: https://hacs.xyz
-2. Add this repository as a custom repository to HACS:
-   - Open HACS
-   - Go to "Frontend" 
-   - Click the three dots menu → "Custom repositories"
-   - Add `https://github.com/chechirecat/hass-voice-replay-card` as type "Lovelace"
-3. Install the card via HACS
-4. Restart Home Assistant
-5. Clear your browser cache (Ctrl+Shift+R)
-
-### Manual Installation
-
-1. Download `voice-replay-card.js` from the latest release
-2. Copy it to `<config>/www/voice-replay-card.js`
-3. Add the resource in Home Assistant:
-   - Go to Settings → Dashboards → Resources
-   - Add Resource:
-     - URL: `/local/voice-replay-card.js`
-     - Resource Type: JavaScript Module
-4. Restart Home Assistant
-5. Clear your browser cache (Ctrl+Shift+R)
+3. **Start using:**
+   - Record voice messages with the microphone button 🎤
+   - Or type text for text-to-speech 🗣️
+   - Select media players and enjoy! 🎵
 
 ## Usage
 
@@ -139,17 +178,31 @@ npm run serve
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+[![Contributors](https://img.shields.io/github/contributors/chechirecat/hass-voice-replay-card?style=for-the-badge)](https://github.com/chechirecat/hass-voice-replay-card/graphs/contributors)
+[![Fork](https://img.shields.io/github/forks/chechirecat/hass-voice-replay-card?style=for-the-badge)](https://github.com/chechirecat/hass-voice-replay-card/fork)
+[![Stars](https://img.shields.io/github/stars/chechirecat/hass-voice-replay-card?style=for-the-badge)](https://github.com/chechirecat/hass-voice-replay-card/stargazers)
 
-## Support
+We welcome contributions! Here's how you can help:
 
-- 🐛 [Report Issues](https://github.com/chechirecat/hass-voice-replay-card/issues)
-- 💬 [Discussions](https://github.com/chechirecat/hass-voice-replay-card/discussions)
-- 📖 [Integration Documentation](https://github.com/chechirecat/hass-voice-replay)
+1. ⭐ **Star this repository** if you find it useful
+2. 🍴 **[Fork the repository](https://github.com/chechirecat/hass-voice-replay-card/fork)**
+3. 🌿 **Create a feature branch** (`git checkout -b feature/amazing-feature`)
+4. ✨ **Make your changes**
+5. 🧪 **Test thoroughly**
+6. 📝 **Commit your changes** (`git commit -m 'Add amazing feature'`)
+7. 🚀 **Push to the branch** (`git push origin feature/amazing-feature`)
+8. 🔄 **Open a Pull Request**
+
+## Support & Community
+
+[![GitHub Issues](https://img.shields.io/github/issues/chechirecat/hass-voice-replay-card?style=for-the-badge&logo=github)](https://github.com/chechirecat/hass-voice-replay-card/issues)
+[![GitHub Discussions](https://img.shields.io/github/discussions/chechirecat/hass-voice-replay-card?style=for-the-badge&logo=github)](https://github.com/chechirecat/hass-voice-replay-card/discussions)
+[![Home Assistant Community](https://img.shields.io/badge/Home%20Assistant-Community-blue?style=for-the-badge&logo=home-assistant)](https://community.home-assistant.io)
+
+- 🐛 **[Report Bugs](https://github.com/chechirecat/hass-voice-replay-card/issues/new?labels=bug&template=bug_report.md)** - Found an issue? Let us know!
+- 💡 **[Request Features](https://github.com/chechirecat/hass-voice-replay-card/issues/new?labels=enhancement&template=feature_request.md)** - Have an idea? Share it!
+- 💬 **[Join Discussions](https://github.com/chechirecat/hass-voice-replay-card/discussions)** - Ask questions, share tips
+- 📖 **[Integration Docs](https://github.com/chechirecat/hass-voice-replay)** - Voice Replay Integration documentation
 
 ## License
 
