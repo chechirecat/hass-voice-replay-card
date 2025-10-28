@@ -128,7 +128,7 @@ jobs:
         release_name: Voice Replay Card ${{ steps.get_version.outputs.tag }}
         body_path: release_notes.md
         draft: true
-        prerelease: false
+        prerelease: true
 
     - name: Upload voice-replay-card.js
       uses: actions/upload-release-asset@v1
