@@ -1,5 +1,5 @@
 {
-  "version": "0.3.0",
+  "version": "0.3.2",
   "name": "voice-replay-card",
   "type": "module",
   "description": "A custom Lovelace card for Voice Replay integration",
