@@ -1,4 +1,4 @@
-import { terser } from 'rollup-plugin-terser';
+import terser from '@rollup/plugin-terser';
 import serve from 'rollup-plugin-serve';
 
 const dev = process.env.ROLLUP_WATCH;

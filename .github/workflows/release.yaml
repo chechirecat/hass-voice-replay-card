@@ -34,6 +34,7 @@ jobs:
         test -f voice-replay-card.js || (echo "voice-replay-card.js not found" && exit 1)
         test -f package.json || (echo "package.json not found" && exit 1)
         test -f hacs.json || (echo "hacs.json not found" && exit 1)
+        test -f dist/voice-replay-card.js || (echo "Built file not found" && exit 1)
         
         # Validate JSON files
         jq empty package.json || (echo "Invalid package.json" && exit 1)
@@ -135,7 +136,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./voice-replay-card.js
+        asset_path: ./dist/voice-replay-card.js
         asset_name: voice-replay-card.js
         asset_content_type: application/javascript
 

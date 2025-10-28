@@ -1,6 +1,5 @@
 {
   "name": "Voice Replay Card",
-  "content_in_root": true,
   "filename": "voice-replay-card.js",
   "country": ["US", "DE", "GB"],
   "homeassistant": "2025.10.4",
