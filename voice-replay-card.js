@@ -468,10 +468,10 @@ class VoiceReplayCard extends LitElement {
 // Register the card
 customElements.define('voice-replay-card', VoiceReplayCard);
 
-// Add card to card picker
+// Add card to card picker (for HACS and other card managers)
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: 'voice-replay-card',
+  type: 'custom:voice-replay-card',
   name: 'Voice Replay Card',
   description: 'A card for recording voice messages and generating TTS',
   preview: true,
