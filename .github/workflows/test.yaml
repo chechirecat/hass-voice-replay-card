@@ -39,7 +39,15 @@ jobs:
         echo "Build output validation passed"
 
     - name: Validate package.json
-      run: npx validate-package-name
+      run: |
+        # Validate JSON syntax and required fields using Node.js
+        node -e "
+          const pkg = JSON.parse(require('fs').readFileSync('package.json', 'utf8'));
+          if (!pkg.name) throw new Error('Missing name field');
+          if (!pkg.version) throw new Error('Missing version field');
+          if (!pkg.scripts) throw new Error('Missing scripts field');
+          console.log('✅ package.json validation passed');
+        "
 
     - name: Check for security vulnerabilities
       run: npm audit --audit-level moderate
@@ -87,14 +95,13 @@ jobs:
 
     - name: Validate HACS structure
       run: |
-        # Check if hacs.json is valid JSON
-        jq empty hacs.json || (echo "Invalid hacs.json" && exit 1)
-        echo "HACS configuration is valid"
+        # Check if hacs.json is valid JSON using Node.js
+        node -e "JSON.parse(require('fs').readFileSync('hacs.json', 'utf8')); console.log('✅ HACS configuration is valid')"
 
     - name: Check card version consistency
       run: |
-        # Extract version from package.json
-        PACKAGE_VERSION=$(jq -r '.version' package.json)
+        # Extract version from package.json using Node.js
+        PACKAGE_VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version)")
         echo "Package version: $PACKAGE_VERSION"
         
         # Check if version exists in voice-replay-card.js

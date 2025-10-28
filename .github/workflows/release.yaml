@@ -36,9 +36,9 @@ jobs:
         test -f hacs.json || (echo "hacs.json not found" && exit 1)
         test -f dist/voice-replay-card.js || (echo "Built file not found" && exit 1)
         
-        # Validate JSON files
-        jq empty package.json || (echo "Invalid package.json" && exit 1)
-        jq empty hacs.json || (echo "Invalid hacs.json" && exit 1)
+        # Validate JSON files using Node.js
+        node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8')); console.log('✅ package.json valid')"
+        node -e "JSON.parse(require('fs').readFileSync('hacs.json', 'utf8')); console.log('✅ hacs.json valid')"
         
         echo "All tests passed"
 
