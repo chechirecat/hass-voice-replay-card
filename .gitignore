@@ -4,8 +4,7 @@ node_modules/
 # Build output
 dist/
 
-# Package managers
-package-lock.json
+# Package managers (keep package-lock.json for reproducible builds)
 yarn.lock
 
 # Environment
