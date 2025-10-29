@@ -7,107 +7,78 @@ on:
     branches: [ main ]
 
 jobs:
-  test:
+  validate:
     runs-on: ubuntu-latest
     
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x, 22.x]
-
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
-    - name: Setup Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-
-    - name: Install dependencies
-      run: npm ci
 
     - name: Check JavaScript syntax
       run: node -c voice-replay-card.js
-
-    - name: Build project
-      run: npm run build
-
-    - name: Validate build output
-      run: |
-        test -f dist/voice-replay-card.js || (echo "Built file not found" && exit 1)
-        echo "Build output validation passed"
-
-    - name: Validate package.json
-      run: |
-        # Validate JSON syntax and required fields using Node.js
-        node -e "
-          const pkg = JSON.parse(require('fs').readFileSync('package.json', 'utf8'));
-          if (!pkg.name) throw new Error('Missing name field');
-          if (!pkg.version) throw new Error('Missing version field');
-          if (!pkg.scripts) throw new Error('Missing scripts field');
-          console.log('✅ package.json validation passed');
-        "
-
-    - name: Check for security vulnerabilities
-      run: npm audit --audit-level moderate
-
-  lint:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20.x'
-        cache: 'npm'
-
-    - name: Install dependencies
-      run: npm ci
-
-    - name: Lint JavaScript
-      run: |
-        # Install ESLint if not present
-        if ! npx eslint --version > /dev/null 2>&1; then
-          npm install eslint --save-dev
-        fi
-        # Run basic linting
-        npx eslint voice-replay-card.js --no-eslintrc --env browser --env es6 --parserOptions '{"ecmaVersion": 2020, "sourceType": "module"}' || echo "Linting completed with warnings"
-
-  validate-structure:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
 
     - name: Validate file structure
       run: |
         # Check required files exist
         test -f voice-replay-card.js || (echo "voice-replay-card.js not found" && exit 1)
-        test -f package.json || (echo "package.json not found" && exit 1)
         test -f README.md || (echo "README.md not found" && exit 1)
         test -f hacs.json || (echo "hacs.json not found" && exit 1)
-        echo "All required files present"
+        test -f LICENSE || (echo "LICENSE not found" && exit 1)
+        echo "✅ All required files present"
 
-    - name: Validate HACS structure
+    - name: Validate HACS configuration
       run: |
-        # Check if hacs.json is valid JSON using Node.js
-        node -e "JSON.parse(require('fs').readFileSync('hacs.json', 'utf8')); console.log('✅ HACS configuration is valid')"
+        # Check if hacs.json is valid JSON and has required fields
+        node -e "
+          const hacs = JSON.parse(require('fs').readFileSync('hacs.json', 'utf8'));
+          if (!hacs.name) throw new Error('Missing name field in hacs.json');
+          if (!hacs.filename) throw new Error('Missing filename field in hacs.json');
+          if (hacs.filename !== 'voice-replay-card.js') throw new Error('Filename should be voice-replay-card.js');
+          console.log('✅ HACS configuration is valid');
+        "
 
-    - name: Check card version consistency
+    - name: Check card version is defined
       run: |
-        # Extract version from package.json using Node.js
-        PACKAGE_VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version)")
-        echo "Package version: $PACKAGE_VERSION"
-        
-        # Check if version exists in voice-replay-card.js
-        if ! grep -q "CARD_VERSION = '$PACKAGE_VERSION'" voice-replay-card.js; then
-          echo "Warning: Card version in voice-replay-card.js may not match package.json"
-          grep "CARD_VERSION" voice-replay-card.js || echo "CARD_VERSION not found"
-        else
-          echo "Card version is consistent"
+        # Check if CARD_VERSION exists in the file
+        if ! grep -q "CARD_VERSION = " voice-replay-card.js; then
+          echo "Error: CARD_VERSION not found in voice-replay-card.js"
+          exit 1
         fi
+        
+        VERSION=$(grep "CARD_VERSION = " voice-replay-card.js | sed -n "s/.*CARD_VERSION = '\(.*\)'.*/\1/p")
+        echo "Card version: $VERSION"
+        
+        if [ -z "$VERSION" ]; then
+          echo "Error: Could not extract version from voice-replay-card.js"
+          exit 1
+        fi
+        
+        echo "✅ Card version validation passed"
+
+    - name: Basic JavaScript linting
+      run: |
+        # Check for common issues
+        echo "Checking for common JavaScript issues..."
+        
+        # Check for console.log (should be console.info for production)
+        if grep -n "console\.log(" voice-replay-card.js; then
+          echo "Warning: console.log found - consider using console.info or console.warn"
+        fi
+        
+        # Check for TODO/FIXME comments
+        if grep -n "TODO\|FIXME" voice-replay-card.js; then
+          echo "Info: TODO/FIXME comments found"
+        fi
+        
+        # Check basic structure
+        if ! grep -q "class VoiceReplayCard" voice-replay-card.js; then
+          echo "Error: VoiceReplayCard class not found"
+          exit 1
+        fi
+        
+        if ! grep -q "customElements.define" voice-replay-card.js; then
+          echo "Error: customElements.define not found"
+          exit 1
+        fi
+        
+        echo "✅ Basic linting checks passed"

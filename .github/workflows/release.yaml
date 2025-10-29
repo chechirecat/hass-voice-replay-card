@@ -6,44 +6,36 @@ on:
       - 'v*'
 
 jobs:
-  test:
+  validate:
     runs-on: ubuntu-latest
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20.x'
-        cache: 'npm'
+    - name: Check JavaScript syntax
+      run: node -c voice-replay-card.js
 
-    - name: Install dependencies
-      run: npm ci
-
-    - name: Run tests
+    - name: Validate file structure
       run: |
-        # Check JavaScript syntax
-        node -c voice-replay-card.js
-        
-        # Build project
-        npm run build
-        
-        # Validate structure
         test -f voice-replay-card.js || (echo "voice-replay-card.js not found" && exit 1)
-        test -f package.json || (echo "package.json not found" && exit 1)
         test -f hacs.json || (echo "hacs.json not found" && exit 1)
-        test -f dist/voice-replay-card.js || (echo "Built file not found" && exit 1)
-        
-        # Validate JSON files using Node.js
-        node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8')); console.log('✅ package.json valid')"
-        node -e "JSON.parse(require('fs').readFileSync('hacs.json', 'utf8')); console.log('✅ hacs.json valid')"
-        
-        echo "All tests passed"
+        test -f README.md || (echo "README.md not found" && exit 1)
+        test -f LICENSE || (echo "LICENSE not found" && exit 1)
+        echo "✅ All required files present"
+
+    - name: Validate HACS configuration
+      run: |
+        node -e "
+          const hacs = JSON.parse(require('fs').readFileSync('hacs.json', 'utf8'));
+          if (!hacs.name) throw new Error('Missing name field in hacs.json');
+          if (!hacs.filename) throw new Error('Missing filename field in hacs.json');
+          if (hacs.filename !== 'voice-replay-card.js') throw new Error('Filename should be voice-replay-card.js');
+          console.log('✅ HACS configuration is valid');
+        "
 
   release:
-    needs: test
+    needs: validate
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -51,18 +43,6 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20.x'
-        cache: 'npm'
-
-    - name: Install dependencies
-      run: npm ci
-
-    - name: Build project
-      run: npm run build
 
     - name: Extract version from tag
       id: get_version
@@ -74,20 +54,20 @@ jobs:
     - name: Validate version consistency
       run: |
         TAG_VERSION="${{ steps.get_version.outputs.version }}"
-        PACKAGE_VERSION=$(jq -r '.version' package.json)
+        
+        # Extract version from card file
+        CARD_VERSION=$(grep "CARD_VERSION = " voice-replay-card.js | sed -n "s/.*CARD_VERSION = '\(.*\)'.*/\1/p")
         
         echo "Tag version: $TAG_VERSION"
-        echo "Package version: $PACKAGE_VERSION"
+        echo "Card version: $CARD_VERSION"
         
-        if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
-          echo "Error: Tag version ($TAG_VERSION) does not match package.json version ($PACKAGE_VERSION)"
+        if [ "$TAG_VERSION" != "$CARD_VERSION" ]; then
+          echo "Error: Tag version ($TAG_VERSION) does not match card version ($CARD_VERSION)"
+          echo "Please update CARD_VERSION in voice-replay-card.js to match the tag"
           exit 1
         fi
         
-        # Check card version
-        if ! grep -q "CARD_VERSION = '$PACKAGE_VERSION'" voice-replay-card.js; then
-          echo "Warning: Card version in voice-replay-card.js may not match package.json"
-        fi
+        echo "✅ Version consistency validated"
 
     - name: Create Release Notes
       id: release_notes
@@ -97,8 +77,15 @@ jobs:
         ## Voice Replay Card v${{ steps.get_version.outputs.version }}
         
         ### Installation
+        
+        #### Via HACS (Recommended)
+        1. Add this repository to HACS as a custom repository
+        2. Search for "Voice Replay Card" in HACS Frontend
+        3. Install and restart Home Assistant
+        
+        #### Manual Installation
         1. Download \`voice-replay-card.js\` from this release
-        2. Place it in your \`www\` folder in Home Assistant
+        2. Place it in your \`<config>/www/\` folder in Home Assistant
         3. Add the card resource in your Lovelace configuration:
            \`\`\`yaml
            resources:
@@ -106,19 +93,24 @@ jobs:
                type: module
            \`\`\`
         
+        ### Requirements
+        * Home Assistant 2025.10.4 or newer
+        * Voice Replay Integration (install separately)
+        
+        ### Features
+        * 🎤 Record voice messages directly in your dashboard
+        * 🗣️ Convert text to speech and play on media players
+        * 📱 Responsive design that works on mobile and desktop
+        * 🎨 Follows Home Assistant design system
+        
         ### What's Changed
         * Updated to version ${{ steps.get_version.outputs.version }}
         * See commit history for detailed changes
         
-        ### Home Assistant Compatibility
-        * Requires Home Assistant 2023.1.0 or newer
-        * Works with Voice Replay integration
-        
-        ### Files in this release
-        * \`voice-replay-card.js\` - The main card file for installation
+        **Full Changelog**: https://github.com/chechirecat/hass-voice-replay-card/compare/v${{ steps.get_version.outputs.version }}...HEAD
         EOF
 
-    - name: Create Draft Release
+    - name: Create Release
       id: create_release
       uses: actions/create-release@v1
       env:
@@ -127,8 +119,8 @@ jobs:
         tag_name: ${{ steps.get_version.outputs.tag }}
         release_name: Voice Replay Card ${{ steps.get_version.outputs.tag }}
         body_path: release_notes.md
-        draft: true
-        prerelease: true
+        draft: false
+        prerelease: false
 
     - name: Upload voice-replay-card.js
       uses: actions/upload-release-asset@v1
@@ -136,30 +128,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./dist/voice-replay-card.js
+        asset_path: ./voice-replay-card.js
         asset_name: voice-replay-card.js
         asset_content_type: application/javascript
-
-    - name: Upload package.json (for reference)
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./package.json
-        asset_name: package.json
-        asset_content_type: application/json
-
-    - name: Publish Release
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          await github.rest.repos.updateRelease({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            release_id: ${{ steps.create_release.outputs.id }},
-            draft: false
-          });
-          
-          console.log('Release published successfully!');
