@@ -163,18 +163,27 @@ show_header: true
 
 ## Development
 
-### Building
+### No Build Process Required
 
-```bash
-npm install
-npm run build
-```
+This card is implemented as pure JavaScript with no build dependencies! Simply edit `voice-replay-card.js` directly.
 
 ### Testing
 
+1. Copy `voice-replay-card.js` to your Home Assistant's `<config>/www/` directory
+2. Add it as a resource in your dashboard
+3. Add the card to test your changes
+4. Use browser developer tools for debugging
+
+### Local Development
+
+For rapid development, you can serve the file locally:
+
 ```bash
-npm run serve
+# Serve from your local development directory
+python3 -m http.server 8000
 ```
+
+Then add `http://localhost:8000/voice-replay-card.js` as a resource for testing.
 
 ## Contributing
 
