@@ -7,6 +7,10 @@
 
 🎨 A beautiful Lovelace card for the Voice Replay Home Assistant integration.
 
+## Screenshot
+
+![Voice Replay Card Preview](screenshots/voice-replay-card.png)
+
 ## Installation
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=chechirecat&repository=hass-voice-replay-card&category=plugin)
@@ -51,8 +55,6 @@
 
    - Restart Home Assistant
    - Clear browser cache (Ctrl+Shift+R)
-
-![Voice Replay Card Preview](screenshots/voice-replay-card.png)
 
 ## Prerequisites
 
