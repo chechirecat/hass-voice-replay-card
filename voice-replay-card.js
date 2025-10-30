@@ -7,7 +7,7 @@
  */
 
 // No build process needed - pure JavaScript implementation
-const CARD_VERSION = '0.3.9';
+const CARD_VERSION = '0.3.10';
 
 // Log card version
 console.info(
@@ -303,6 +303,12 @@ class VoiceReplayCard extends HTMLElement {
         'audio/wav'            // Universal but large
       ];
 
+      console.log('🎵 Checking browser MediaRecorder format support:');
+      supportedTypes.forEach(type => {
+        const supported = MediaRecorder.isTypeSupported(type);
+        console.log(`🎵   ${type}: ${supported ? '✅ Supported' : '❌ Not supported'}`);
+      });
+
       for (const type of supportedTypes) {
         if (MediaRecorder.isTypeSupported(type)) {
           mimeType = type;
@@ -310,6 +316,8 @@ class VoiceReplayCard extends HTMLElement {
           break;
         }
       }
+
+      console.log('🎵 Final selected MIME type:', mimeType);
 
       this._mediaRecorder = new MediaRecorder(stream, { mimeType });
       this._recordedChunks = [];
