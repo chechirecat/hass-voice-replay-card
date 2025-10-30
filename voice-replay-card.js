@@ -39,6 +39,7 @@ class VoiceReplayCard extends HTMLElement {
     this._mediaPlayersLoaded = false;
     this._loadingMediaPlayers = false;
     this._microphoneChecked = false;
+    this._lastAutoHelp = 0;
   }
 
   static getStubConfig() {
@@ -215,35 +216,130 @@ class VoiceReplayCard extends HTMLElement {
 
   async _startRecording() {
     try {
+      // Check if we're in a secure context (HTTPS or localhost)
+      const isSecureContext = window.isSecureContext || 
+                             location.protocol === 'https:' || 
+                             location.hostname === 'localhost' ||
+                             location.hostname === '127.0.0.1';
+      
+      if (!isSecureContext) {
+        const currentUrl = window.location.href;
+        const httpsUrl = currentUrl.replace('http://', 'https://');
+        this._showStatus(`🔒 HTTPS required for microphone access. Try: ${httpsUrl}`, 'error');
+        console.error('Microphone requires HTTPS. Current URL:', currentUrl, 'Try:', httpsUrl);
+        return;
+      }
+
       // Check if microphone access is supported
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         this._showStatus('Microphone access not supported in this browser', 'error');
         return;
       }
 
-      // Check current permission state
+      // Check current permission state (but don't block - let getUserMedia trigger permission request)
+      let permissionState = 'unknown';
       if (navigator.permissions) {
         try {
           const permission = await navigator.permissions.query({ name: 'microphone' });
+          permissionState = permission.state;
           console.log('Microphone permission state:', permission.state);
           
-          if (permission.state === 'denied') {
-            this._showStatus('Microphone access denied. Please enable in browser settings.', 'error');
-            return;
+          if (permission.state === 'granted') {
+            this._showStatus('Microphone permission already granted, starting recording...', 'info');
+          } else if (permission.state === 'prompt') {
+            this._showStatus('Please allow microphone access when prompted...', 'info');
+          } else if (permission.state === 'denied') {
+            // Don't return early - let getUserMedia try anyway, it might trigger permission dialog
+            this._showStatus('Requesting microphone access...', 'info');
           }
         } catch (permError) {
           console.warn('Could not check microphone permissions:', permError);
+          this._showStatus('Requesting microphone access...', 'info');
         }
+      } else {
+        this._showStatus('Requesting microphone access...', 'info');
       }
 
-      this._showStatus('Requesting microphone access...', 'info');
-      
+      // Always try getUserMedia - this will trigger the permission dialog if needed
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
+          autoGainControl: true,
+          // Add more constraints for better compatibility
+          sampleRate: 44100,
+          channelCount: 1
         }
+      });
+      
+      // If we get here, permission was granted!
+      console.log('Microphone access granted successfully');
+      
+      this._mediaRecorder = new MediaRecorder(stream);
+      this._recordedChunks = [];
+
+      this._mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          this._recordedChunks.push(event.data);
+        }
+      };
+
+      this._mediaRecorder.onstop = () => {
+        const recordedBlob = new Blob(this._recordedChunks, { type: 'audio/webm' });
+        this._recordedAudio = recordedBlob;
+        stream.getTracks().forEach(track => track.stop());
+        console.log('Recording stopped and audio blob created');
+      };
+
+      this._mediaRecorder.start();
+      this._isRecording = true;
+      this._showStatus('🎤 Recording... Click to stop', 'success');
+      
+    } catch (error) {
+      console.error('Microphone access error:', error);
+      
+      let errorMessage = 'Failed to access microphone';
+      let showHelpButton = false;
+      
+      if (error.name === 'NotAllowedError') {
+        errorMessage = 'Microphone access denied. Click "❓ Mic Help" for guidance.';
+        showHelpButton = true;
+      } else if (error.name === 'NotFoundError') {
+        errorMessage = 'No microphone found on this device.';
+      } else if (error.name === 'NotSupportedError') {
+        errorMessage = 'Microphone recording not supported in this browser.';
+        showHelpButton = true;
+      } else if (error.name === 'SecurityError') {
+        errorMessage = 'Microphone blocked by security policy. HTTPS required.';
+        showHelpButton = true;
+      } else if (error.name === 'AbortError') {
+        errorMessage = 'Microphone access was cancelled.';
+      } else if (error.name === 'OverconstrainedError') {
+        errorMessage = 'Microphone constraints not supported. Trying simpler settings...';
+        // Try again with simpler constraints
+        this._startRecordingSimple();
+        return;
+      }
+      
+      this._showStatus(errorMessage, 'error');
+      
+      // Auto-show help for certain error types
+      if (showHelpButton && this._shouldAutoShowHelp(error)) {
+        setTimeout(() => {
+          console.log('Auto-showing microphone help due to:', error.name);
+        }, 2000);
+      }
+    }
+  }
+
+  // Fallback method with simpler audio constraints
+  async _startRecordingSimple() {
+    try {
+      console.log('Trying microphone access with simpler constraints...');
+      this._showStatus('Retrying with simpler audio settings...', 'info');
+      
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: true // Minimal constraints
       });
       
       this._mediaRecorder = new MediaRecorder(stream);
@@ -263,27 +359,24 @@ class VoiceReplayCard extends HTMLElement {
 
       this._mediaRecorder.start();
       this._isRecording = true;
-      this._showStatus('Recording... Click to stop', 'info');
+      this._showStatus('🎤 Recording... (simple mode)', 'success');
       
-    } catch (error) {
-      console.error('Microphone access error:', error);
-      
-      let errorMessage = 'Failed to access microphone';
-      
-      if (error.name === 'NotAllowedError') {
-        errorMessage = 'Microphone access denied. Check browser permissions.';
-      } else if (error.name === 'NotFoundError') {
-        errorMessage = 'No microphone found on this device.';
-      } else if (error.name === 'NotSupportedError') {
-        errorMessage = 'Microphone access not supported in this browser.';
-      } else if (error.name === 'SecurityError') {
-        errorMessage = 'Microphone access blocked by security policy. Try HTTPS.';
-      } else if (error.name === 'AbortError') {
-        errorMessage = 'Microphone access aborted.';
-      }
-      
-      this._showStatus(errorMessage, 'error');
+    } catch (simpleError) {
+      console.error('Simple microphone access also failed:', simpleError);
+      this._showStatus('Unable to access microphone. Click "❓ Mic Help" for troubleshooting.', 'error');
     }
+  }
+
+  _shouldAutoShowHelp(error) {
+    // Don't auto-show help too frequently
+    const now = Date.now();
+    const lastHelp = this._lastAutoHelp || 0;
+    if (now - lastHelp < 30000) { // 30 seconds cooldown
+      return false;
+    }
+    
+    this._lastAutoHelp = now;
+    return error.name === 'NotAllowedError' || error.name === 'SecurityError';
   }
 
   _stopRecording() {
@@ -392,13 +485,39 @@ class VoiceReplayCard extends HTMLElement {
     const isMobile = isAndroid || isIOS;
     const isHomeAssistantApp = window.location.href.includes('homeassistant://') || 
                                window.navigator.userAgent.includes('Home Assistant');
+    const isSecureContext = window.isSecureContext || 
+                           location.protocol === 'https:' || 
+                           location.hostname === 'localhost' ||
+                           location.hostname === '127.0.0.1';
 
     let helpMessage = `🎤 Microphone Troubleshooting
 
 📱 Platform: ${isMobile ? (isAndroid ? 'Android' : 'iOS') : 'Desktop'}
 🏠 App: ${isHomeAssistantApp ? 'Home Assistant App' : 'Web Browser'}
+🔒 Protocol: ${location.protocol.toUpperCase()} ${isSecureContext ? '(Secure ✅)' : '(Insecure ❌)'}
 
 `;
+
+    // HTTPS Warning - Most Important!
+    if (!isSecureContext) {
+      helpMessage += `🚨 CRITICAL: HTTPS Required!
+Microphone access is blocked over HTTP for security.
+
+🔧 Solutions:
+1. Enable HTTPS in Home Assistant:
+   Add to configuration.yaml:
+   http:
+     ssl_certificate: /ssl/cert.pem
+     ssl_key: /ssl/key.pem
+
+2. Access via localhost:
+   Try: http://localhost:8123 instead of IP
+
+3. Current URL: ${location.href}
+   Try HTTPS: ${location.href.replace('http://', 'https://')}
+
+`;
+    }
 
     if (isHomeAssistantApp && isAndroid) {
       helpMessage += `📋 Android Home Assistant App:
