@@ -7,7 +7,7 @@
  */
 
 // No build process needed - pure JavaScript implementation
-const CARD_VERSION = '0.3.6';
+const CARD_VERSION = '0.3.7';
 
 // Log card version
 console.info(
@@ -68,7 +68,7 @@ class VoiceReplayCard extends HTMLElement {
       show_header: true,
       ...config,
     };
-    
+
     // Only render if we have all the data we need
     if (this._hass) {
       // Load media players if not already loaded
@@ -90,7 +90,7 @@ class VoiceReplayCard extends HTMLElement {
     if (this.config && !this._mediaPlayersLoaded) {
       this._loadMediaPlayers();
     }
-    
+
     // Check microphone availability when hass is set
     this._checkMicrophoneAvailability();
   }
@@ -100,9 +100,9 @@ class VoiceReplayCard extends HTMLElement {
     if (this._isRecording || this._microphoneChecked) {
       return;
     }
-    
+
     this._microphoneChecked = true;
-    
+
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         console.warn('Voice Replay Card: Microphone access not supported');
@@ -114,7 +114,7 @@ class VoiceReplayCard extends HTMLElement {
         try {
           const permission = await navigator.permissions.query({ name: 'microphone' });
           console.log('Voice Replay Card: Microphone permission state:', permission.state);
-          
+
           if (permission.state === 'denied') {
             console.warn('Voice Replay Card: Microphone access denied');
           }
@@ -122,14 +122,14 @@ class VoiceReplayCard extends HTMLElement {
           console.log('Voice Replay Card: Could not check microphone permissions:', error.message);
         }
       }
-      
+
       // Check if MediaRecorder is supported
       if (!window.MediaRecorder) {
         console.warn('Voice Replay Card: MediaRecorder not supported');
       } else {
         console.log('Voice Replay Card: Microphone recording capabilities available');
       }
-      
+
     } catch (error) {
       console.warn('Voice Replay Card: Error checking microphone availability:', error.message);
     }
@@ -140,39 +140,48 @@ class VoiceReplayCard extends HTMLElement {
     if (this._loadingMediaPlayers) {
       return;
     }
-    
+
     this._loadingMediaPlayers = true;
-    
+
     try {
       console.log('Loading media players...');
       console.log('Making request to:', '/api/voice-replay/media_players');
       const response = await this._hass.fetchWithAuth('/api/voice-replay/media_players');
       console.log('Response received:', response.status, response.statusText);
-      
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-      
+
       const players = await response.json();
-      console.log('Media players loaded:', players);
-      
+      console.log('🎵 Media players loaded:', players);
+      console.log('🎵 First player structure:', players[0]);
+      console.log('🎵 Total players count:', players.length);
+
       this._mediaPlayers = players;
       this._mediaPlayersLoaded = true;
-      
+      console.log('🎵 Set _mediaPlayers, length:', this._mediaPlayers?.length);
+
       // Auto-select first player if none selected
       if (players.length > 0 && !this._selectedPlayer) {
         this._selectedPlayer = players[0].entity_id;
+        console.log('🎵 Auto-selected player:', this._selectedPlayer);
       }
-      
+
       // Only re-render if we actually got new data
+      console.log('🎵 About to check if should render, config exists:', !!this.config);
       if (this.config) {
+        console.log('🎵 Calling _render() after loading players...');
         this._render();
+        console.log('🎵 _render() call completed');
+      } else {
+        console.warn('🎵 No config, skipping render');
       }
     } catch (error) {
       console.error('Failed to load media players:', error);
       this._mediaPlayersLoaded = true; // Still mark as loaded to prevent retries
       this._showStatus('Failed to load media players (using fallback)', 'error');
-      
+
       // Use a fallback - get media players from hass states
       this._loadMediaPlayersFromStates();
     } finally {
@@ -184,7 +193,7 @@ class VoiceReplayCard extends HTMLElement {
     if (!this._hass || !this._hass.states) {
       return;
     }
-    
+
     // Fallback: get media players from Home Assistant states
     const mediaPlayers = [];
     Object.keys(this._hass.states).forEach(entityId => {
@@ -197,15 +206,15 @@ class VoiceReplayCard extends HTMLElement {
         });
       }
     });
-    
+
     console.log('Fallback media players:', mediaPlayers);
     this._mediaPlayers = mediaPlayers;
-    
+
     // Auto-select first player if none selected
     if (mediaPlayers.length > 0 && !this._selectedPlayer) {
       this._selectedPlayer = mediaPlayers[0].entity_id;
     }
-    
+
     if (this.config) {
       this._render();
     }
@@ -228,7 +237,7 @@ class VoiceReplayCard extends HTMLElement {
                              location.protocol === 'https:' || 
                              location.hostname === 'localhost' ||
                              location.hostname === '127.0.0.1';
-      
+
       if (!isSecureContext) {
         const currentUrl = window.location.href;
         const httpsUrl = currentUrl.replace('http://', 'https://');
@@ -250,7 +259,7 @@ class VoiceReplayCard extends HTMLElement {
           const permission = await navigator.permissions.query({ name: 'microphone' });
           permissionState = permission.state;
           console.log('Microphone permission state:', permission.state);
-          
+
           if (permission.state === 'granted') {
             this._showStatus('Microphone permission already granted, starting recording...', 'info');
           } else if (permission.state === 'prompt') {
@@ -278,10 +287,10 @@ class VoiceReplayCard extends HTMLElement {
           channelCount: 1
         }
       });
-      
+
       // If we get here, permission was granted!
       console.log('Microphone access granted successfully');
-      
+
       this._mediaRecorder = new MediaRecorder(stream);
       this._recordedChunks = [];
 
@@ -301,13 +310,13 @@ class VoiceReplayCard extends HTMLElement {
       this._mediaRecorder.start();
       this._isRecording = true;
       this._showStatus('🎤 Recording... Click to stop', 'success');
-      
+
     } catch (error) {
       console.error('Microphone access error:', error);
-      
+
       let errorMessage = 'Failed to access microphone';
       let showHelpButton = false;
-      
+
       if (error.name === 'NotAllowedError') {
         errorMessage = 'Microphone access denied. Click "❓ Mic Help" for guidance.';
         showHelpButton = true;
@@ -327,9 +336,9 @@ class VoiceReplayCard extends HTMLElement {
         this._startRecordingSimple();
         return;
       }
-      
+
       this._showStatus(errorMessage, 'error');
-      
+
       // Auto-show help for certain error types
       if (showHelpButton && this._shouldAutoShowHelp(error)) {
         setTimeout(() => {
@@ -344,11 +353,11 @@ class VoiceReplayCard extends HTMLElement {
     try {
       console.log('Trying microphone access with simpler constraints...');
       this._showStatus('Retrying with simpler audio settings...', 'info');
-      
+
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: true // Minimal constraints
       });
-      
+
       this._mediaRecorder = new MediaRecorder(stream);
       this._recordedChunks = [];
 
@@ -367,7 +376,7 @@ class VoiceReplayCard extends HTMLElement {
       this._mediaRecorder.start();
       this._isRecording = true;
       this._showStatus('🎤 Recording... (simple mode)', 'success');
-      
+
     } catch (simpleError) {
       console.error('Simple microphone access also failed:', simpleError);
       this._showStatus('Unable to access microphone. Click "❓ Mic Help" for troubleshooting.', 'error');
@@ -381,7 +390,7 @@ class VoiceReplayCard extends HTMLElement {
     if (now - lastHelp < 30000) { // 30 seconds cooldown
       return false;
     }
-    
+
     this._lastAutoHelp = now;
     return error.name === 'NotAllowedError' || error.name === 'SecurityError';
   }
@@ -589,13 +598,21 @@ Edge: Site permissions → Microphone → Allow`;
   }
 
   _render() {
+    console.log('🎨 _render() called');
+    console.log('🎨 _loadingMediaPlayers:', this._loadingMediaPlayers);
+    console.log('🎨 config exists:', !!this.config);
+    console.log('🎨 _mediaPlayers exists:', !!this._mediaPlayers);
+    console.log('🎨 _mediaPlayers length:', this._mediaPlayers?.length || 0);
+
     // Prevent rendering if we're in the middle of loading
     if (this._loadingMediaPlayers) {
+      console.log('🎨 Skipping render - still loading media players');
       return;
     }
-    
+
     // Show loading state if we don't have config yet
     if (!this.config) {
+      console.log('🎨 No config, showing loading state');
       this.innerHTML = '<ha-card><div class="card-content">Loading...</div></ha-card>';
       return;
     }
@@ -607,17 +624,33 @@ Edge: Site permissions → Microphone → Allow`;
             <h2>${this.config.title}</h2>
           </div>
         ` : ''}
-        
+
         <div class="card-content">
           <div class="player-selector">
             <label>Media Player:</label>
             <select id="player-select">
               <option value="">Select a player</option>
-              ${this._mediaPlayers.map(player => `
-                <option value="${player.entity_id}" ${player.entity_id === this._selectedPlayer ? 'selected' : ''}>
-                  ${player.name}
-                </option>
-              `).join('')}
+              ${(() => {
+                console.log('🎯 Rendering dropdown options...');
+                console.log('🎯 _mediaPlayers available:', !!this._mediaPlayers);
+                console.log('🎯 _mediaPlayers length:', this._mediaPlayers?.length || 0);
+                console.log('🎯 _mediaPlayers content:', this._mediaPlayers);
+                console.log('🎯 _selectedPlayer:', this._selectedPlayer);
+
+                if (!this._mediaPlayers || this._mediaPlayers.length === 0) {
+                  console.warn('🎯 No media players available for dropdown');
+                  return '';
+                }
+
+                const options = this._mediaPlayers.map(player => {
+                  const option = `<option value="${player.entity_id}" ${player.entity_id === this._selectedPlayer ? 'selected' : ''}>${player.name}</option>`;
+                  console.log('🎯 Generated option:', option);
+                  return option;
+                }).join('');
+
+                console.log('🎯 Final dropdown options HTML:', options);
+                return options;
+              })()}
             </select>
           </div>
 
@@ -924,7 +957,7 @@ function registerWithScopedRegistry() {
       console.warn('Voice Replay Card: Failed to register with window.customElementRegistry:', error);
     }
   }
-  
+
   // Look for any scoped registries in the DOM
   document.querySelectorAll('*').forEach(element => {
     if (element.customElementRegistry) {
@@ -980,7 +1013,7 @@ setTimeout(() => {
     console.info('Voice Replay Card: Found loadCardHelpers, attempting delayed registration');
     registerWithScopedRegistry();
   }
-  
+
   // Try to find Home Assistant's main element and register there
   const haMain = document.querySelector('home-assistant') || document.querySelector('ha-main') || document.querySelector('hui-root');
   if (haMain && haMain.customElementRegistry) {
