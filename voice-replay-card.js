@@ -7,7 +7,7 @@
  */
 
 // No build process needed - pure JavaScript implementation
-const CARD_VERSION = '0.3.11';
+const CARD_VERSION = '0.3.12';
 
 // Log card version
 console.info(
@@ -294,13 +294,14 @@ class VoiceReplayCard extends HTMLElement {
       // If we get here, permission was granted!
       console.log('Microphone access granted successfully');
 
-      // Try different MIME types for better compatibility with media players
+      // Try different MIME types with preference order: MP4, MP3, WebM, WAV
       let mimeType = 'audio/webm';
       const supportedTypes = [
-        'audio/mp4',           // Best for Sonos and most players
+        'audio/mp4',           // Best compatibility and compression
+        'audio/mpeg',          // MP3 - universal support
         'audio/webm;codecs=opus',  // Good compression, modern browsers
-        'audio/webm',          // Fallback
-        'audio/wav'            // Universal but large
+        'audio/webm',          // Fallback WebM
+        'audio/wav'            // Largest but universal
       ];
 
       console.log('🎵 Checking browser MediaRecorder format support:');
@@ -444,46 +445,53 @@ class VoiceReplayCard extends HTMLElement {
     }
 
     try {
-      // Check if the selected player is Sonos and we have WebM audio
-      const playerName = this._mediaPlayers.find(p => p.entity_id === this._selectedPlayer)?.name || this._selectedPlayer;
+      // Get the recorded audio format
       const audioFormat = this._audioMimeType || 'audio/webm';
-      const isSonos = this._selectedPlayer.toLowerCase().includes('sonos') || playerName.toLowerCase().includes('sonos');
-      const isWebM = audioFormat.includes('webm');
-
+      const playerName = this._mediaPlayers.find(p => p.entity_id === this._selectedPlayer)?.name || this._selectedPlayer;
+      
       let finalAudio = this._recordedAudio;
       let fileExt = 'webm';
       let contentType = 'audio/webm';
 
-      // Convert WebM to MP3 for Sonos players
-      if (isSonos && isWebM) {
-        console.log('🎵 Converting WebM to MP3 for Sonos compatibility...');
-        this._showStatus('Converting audio for Sonos...', 'info');
+      // Determine format and handle conversion if needed
+      if (audioFormat.includes('mp4')) {
+        fileExt = 'm4a';
+        contentType = 'audio/mp4';
+        console.log('🎵 Using native MP4 format');
+      } else if (audioFormat.includes('mpeg') || audioFormat.includes('mp3')) {
+        fileExt = 'mp3';
+        contentType = 'audio/mpeg';
+        console.log('🎵 Using native MP3 format');
+      } else if (audioFormat.includes('wav')) {
+        fileExt = 'wav';
+        contentType = 'audio/wav';
+        console.log('🎵 Using native WAV format');
+      } else if (audioFormat.includes('webm')) {
+        // Convert WebM to WAV for better compatibility
+        console.log('🎵 Converting WebM to WAV for universal compatibility...');
+        this._showStatus('Converting audio to WAV...', 'info');
         
         try {
-          finalAudio = await this._convertWebMToMP3(this._recordedAudio);
-          fileExt = 'mp3';
-          contentType = 'audio/mpeg';
-          console.log('🎵 Conversion successful - using MP3 format');
-        } catch (conversionError) {
-          console.warn('🎵 Conversion failed, trying original format:', conversionError);
-          this._showStatus('Audio conversion failed, trying original format...', 'warning');
-          // Continue with original WebM
-        }
-      } else {
-        // Determine format for non-Sonos players
-        if (audioFormat.includes('mp4')) {
-          fileExt = 'm4a';
-          contentType = 'audio/mp4';
-        } else if (audioFormat.includes('mpeg') || audioFormat.includes('mp3')) {
-          fileExt = 'mp3';
-          contentType = 'audio/mpeg';
-        } else if (audioFormat.includes('wav')) {
+          finalAudio = await this._convertWebMToWav(this._recordedAudio);
           fileExt = 'wav';
           contentType = 'audio/wav';
+          console.log('🎵 Conversion successful - using WAV format');
+        } catch (conversionError) {
+          console.warn('🎵 Conversion failed, trying original WebM:', conversionError);
+          this._showStatus('Audio conversion failed, trying original format...', 'warning');
+          // Keep original WebM format
+          fileExt = 'webm';
+          contentType = 'audio/webm';
         }
       }
 
-      console.log('🎵 Uploading audio with format:', audioFormat, 'as', fileExt);
+      console.log('🎵 Uploading audio:', {
+        originalFormat: audioFormat,
+        finalFormat: contentType,
+        fileExtension: fileExt,
+        selectedPlayer: this._selectedPlayer,
+        playerName: playerName
+      });
 
       const formData = new FormData();
       formData.append('audio', finalAudio, `recording.${fileExt}`);
@@ -508,7 +516,7 @@ class VoiceReplayCard extends HTMLElement {
     }
   }
 
-  async _convertWebMToMP3(webmBlob) {
+  async _convertWebMToWav(webmBlob) {
     return new Promise((resolve, reject) => {
       try {
         // Create audio context for conversion
