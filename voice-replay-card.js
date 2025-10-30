@@ -7,7 +7,7 @@
  */
 
 // No build process needed - pure JavaScript implementation
-const CARD_VERSION = '0.3.7';
+const CARD_VERSION = '0.3.8';
 
 // Log card version
 console.info(
@@ -168,6 +168,9 @@ class VoiceReplayCard extends HTMLElement {
         console.log('🎵 Auto-selected player:', this._selectedPlayer);
       }
 
+      // IMPORTANT: Reset loading flag BEFORE rendering
+      this._loadingMediaPlayers = false;
+
       // Only re-render if we actually got new data
       console.log('🎵 About to check if should render, config exists:', !!this.config);
       if (this.config) {
@@ -184,8 +187,7 @@ class VoiceReplayCard extends HTMLElement {
 
       // Use a fallback - get media players from hass states
       this._loadMediaPlayersFromStates();
-    } finally {
-      this._loadingMediaPlayers = false;
+      this._loadingMediaPlayers = false; // Reset flag in error case too
     }
   }
 
