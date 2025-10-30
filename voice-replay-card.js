@@ -7,7 +7,7 @@
  */
 
 // No build process needed - pure JavaScript implementation
-const CARD_VERSION = '0.3.12';
+const CARD_VERSION = '0.3.13';
 
 // Log card version
 console.info(
@@ -445,59 +445,41 @@ class VoiceReplayCard extends HTMLElement {
     }
 
     try {
-      // Get the recorded audio format
+      // Get the recorded audio format and send it directly to backend
       const audioFormat = this._audioMimeType || 'audio/webm';
       const playerName = this._mediaPlayers.find(p => p.entity_id === this._selectedPlayer)?.name || this._selectedPlayer;
-      
-      let finalAudio = this._recordedAudio;
+
+      // Determine file extension and content type based on recorded format
       let fileExt = 'webm';
       let contentType = 'audio/webm';
 
-      // Determine format and handle conversion if needed
       if (audioFormat.includes('mp4')) {
         fileExt = 'm4a';
         contentType = 'audio/mp4';
-        console.log('🎵 Using native MP4 format');
       } else if (audioFormat.includes('mpeg') || audioFormat.includes('mp3')) {
         fileExt = 'mp3';
         contentType = 'audio/mpeg';
-        console.log('🎵 Using native MP3 format');
       } else if (audioFormat.includes('wav')) {
         fileExt = 'wav';
         contentType = 'audio/wav';
-        console.log('🎵 Using native WAV format');
       } else if (audioFormat.includes('webm')) {
-        // Convert WebM to WAV for better compatibility
-        console.log('🎵 Converting WebM to WAV for universal compatibility...');
-        this._showStatus('Converting audio to WAV...', 'info');
-        
-        try {
-          finalAudio = await this._convertWebMToWav(this._recordedAudio);
-          fileExt = 'wav';
-          contentType = 'audio/wav';
-          console.log('🎵 Conversion successful - using WAV format');
-        } catch (conversionError) {
-          console.warn('🎵 Conversion failed, trying original WebM:', conversionError);
-          this._showStatus('Audio conversion failed, trying original format...', 'warning');
-          // Keep original WebM format
-          fileExt = 'webm';
-          contentType = 'audio/webm';
-        }
+        fileExt = 'webm';
+        contentType = 'audio/webm';
       }
 
       console.log('🎵 Uploading audio:', {
-        originalFormat: audioFormat,
-        finalFormat: contentType,
+        recordedFormat: audioFormat,
+        contentType: contentType,
         fileExtension: fileExt,
         selectedPlayer: this._selectedPlayer,
         playerName: playerName
       });
 
       const formData = new FormData();
-      formData.append('audio', finalAudio, `recording.${fileExt}`);
+      formData.append('audio', this._recordedAudio, `recording.${fileExt}`);
       formData.append('entity_id', this._selectedPlayer);
       formData.append('type', 'recording');
-      formData.append('content_type', contentType); // Help backend choose right content type
+      formData.append('content_type', contentType);
 
       this._showStatus('Uploading and playing...', 'info');
 
@@ -514,85 +496,6 @@ class VoiceReplayCard extends HTMLElement {
     } catch (error) {
       this._showStatus(`Error: ${error.message}`, 'error');
     }
-  }
-
-  async _convertWebMToWav(webmBlob) {
-    return new Promise((resolve, reject) => {
-      try {
-        // Create audio context for conversion
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)({
-          sampleRate: 22050 // Lower sample rate for smaller files
-        });
-
-        // Read the WebM blob as array buffer
-        const reader = new FileReader();
-        reader.onload = async () => {
-          try {
-            const arrayBuffer = reader.result;
-            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-            
-            // Convert to WAV first (simpler conversion)
-            const wavBlob = this._audioBufferToWav(audioBuffer);
-            
-            // For now, return WAV (most players support it)
-            // In future we could add lamejs for true MP3 conversion
-            resolve(wavBlob);
-            
-          } catch (decodeError) {
-            console.error('Audio decode error:', decodeError);
-            reject(decodeError);
-          }
-        };
-        reader.onerror = () => reject(new Error('Failed to read audio blob'));
-        reader.readAsArrayBuffer(webmBlob);
-        
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }
-
-  _audioBufferToWav(audioBuffer) {
-    const length = audioBuffer.length;
-    const sampleRate = audioBuffer.sampleRate;
-    const numberOfChannels = audioBuffer.numberOfChannels;
-    
-    // Create WAV file
-    const buffer = new ArrayBuffer(44 + length * numberOfChannels * 2);
-    const view = new DataView(buffer);
-    
-    // WAV header
-    const writeString = (offset, string) => {
-      for (let i = 0; i < string.length; i++) {
-        view.setUint8(offset + i, string.charCodeAt(i));
-      }
-    };
-    
-    writeString(0, 'RIFF');
-    view.setUint32(4, buffer.byteLength - 8, true);
-    writeString(8, 'WAVE');
-    writeString(12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, numberOfChannels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * numberOfChannels * 2, true);
-    view.setUint16(32, numberOfChannels * 2, true);
-    view.setUint16(34, 16, true);
-    writeString(36, 'data');
-    view.setUint32(40, length * numberOfChannels * 2, true);
-    
-    // Convert audio data
-    let offset = 44;
-    for (let i = 0; i < length; i++) {
-      for (let channel = 0; channel < numberOfChannels; channel++) {
-        const sample = Math.max(-1, Math.min(1, audioBuffer.getChannelData(channel)[i]));
-        view.setInt16(offset, sample * 0x7FFF, true);
-        offset += 2;
-      }
-    }
-    
-    return new Blob([buffer], { type: 'audio/wav' });
   }
 
   async _generateAndPlaySpeech() {
