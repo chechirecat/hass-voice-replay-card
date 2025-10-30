@@ -7,7 +7,7 @@
  */
 
 // No build process needed - pure JavaScript implementation
-const CARD_VERSION = '0.3.8';
+const CARD_VERSION = '0.3.9';
 
 // Log card version
 console.info(
@@ -28,6 +28,7 @@ class VoiceReplayCard extends HTMLElement {
     super();
     this._isRecording = false;
     this._recordedAudio = null;
+    this._audioMimeType = null; // Track the actual recording format used
     this._selectedPlayer = '';
     this._mediaPlayers = [];
     this._mode = 'record';
@@ -293,7 +294,24 @@ class VoiceReplayCard extends HTMLElement {
       // If we get here, permission was granted!
       console.log('Microphone access granted successfully');
 
-      this._mediaRecorder = new MediaRecorder(stream);
+      // Try different MIME types for better compatibility with media players
+      let mimeType = 'audio/webm';
+      const supportedTypes = [
+        'audio/mp4',           // Best for Sonos and most players
+        'audio/webm;codecs=opus',  // Good compression, modern browsers
+        'audio/webm',          // Fallback
+        'audio/wav'            // Universal but large
+      ];
+
+      for (const type of supportedTypes) {
+        if (MediaRecorder.isTypeSupported(type)) {
+          mimeType = type;
+          console.log('🎵 Selected recording format:', mimeType);
+          break;
+        }
+      }
+
+      this._mediaRecorder = new MediaRecorder(stream, { mimeType });
       this._recordedChunks = [];
 
       this._mediaRecorder.ondataavailable = (event) => {
@@ -303,10 +321,11 @@ class VoiceReplayCard extends HTMLElement {
       };
 
       this._mediaRecorder.onstop = () => {
-        const recordedBlob = new Blob(this._recordedChunks, { type: 'audio/webm' });
+        const recordedBlob = new Blob(this._recordedChunks, { type: mimeType });
         this._recordedAudio = recordedBlob;
+        this._audioMimeType = mimeType; // Store the actual format used
         stream.getTracks().forEach(track => track.stop());
-        console.log('Recording stopped and audio blob created');
+        console.log('Recording stopped and audio blob created with format:', mimeType);
       };
 
       this._mediaRecorder.start();
@@ -417,10 +436,29 @@ class VoiceReplayCard extends HTMLElement {
     }
 
     try {
+      // Determine the best file extension and content type based on recorded format
+      const audioFormat = this._audioMimeType || 'audio/webm';
+      let fileExt = 'webm';
+      let contentType = 'audio/webm';
+
+      if (audioFormat.includes('mp4')) {
+        fileExt = 'm4a';
+        contentType = 'audio/mp4';
+      } else if (audioFormat.includes('mpeg') || audioFormat.includes('mp3')) {
+        fileExt = 'mp3';
+        contentType = 'audio/mpeg';
+      } else if (audioFormat.includes('wav')) {
+        fileExt = 'wav';
+        contentType = 'audio/wav';
+      }
+
+      console.log('🎵 Uploading audio with format:', audioFormat, 'as', fileExt);
+
       const formData = new FormData();
-      formData.append('audio', this._recordedAudio, 'recording.webm');
+      formData.append('audio', this._recordedAudio, `recording.${fileExt}`);
       formData.append('entity_id', this._selectedPlayer);
       formData.append('type', 'recording');
+      formData.append('content_type', contentType); // Help backend choose right content type
 
       this._showStatus('Uploading and playing...', 'info');
 
