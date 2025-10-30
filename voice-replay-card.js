@@ -38,6 +38,7 @@ class VoiceReplayCard extends HTMLElement {
     this._recordedChunks = [];
     this._mediaPlayersLoaded = false;
     this._loadingMediaPlayers = false;
+    this._microphoneChecked = false;
   }
 
   static getStubConfig() {
@@ -87,6 +88,49 @@ class VoiceReplayCard extends HTMLElement {
     // Only load media players once when hass is first set
     if (this.config && !this._mediaPlayersLoaded) {
       this._loadMediaPlayers();
+    }
+    
+    // Check microphone availability when hass is set
+    this._checkMicrophoneAvailability();
+  }
+
+  async _checkMicrophoneAvailability() {
+    // Don't check if we're already recording or have already checked
+    if (this._isRecording || this._microphoneChecked) {
+      return;
+    }
+    
+    this._microphoneChecked = true;
+    
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.warn('Voice Replay Card: Microphone access not supported');
+        return;
+      }
+
+      // Check permission state without requesting access
+      if (navigator.permissions) {
+        try {
+          const permission = await navigator.permissions.query({ name: 'microphone' });
+          console.log('Voice Replay Card: Microphone permission state:', permission.state);
+          
+          if (permission.state === 'denied') {
+            console.warn('Voice Replay Card: Microphone access denied');
+          }
+        } catch (error) {
+          console.log('Voice Replay Card: Could not check microphone permissions:', error.message);
+        }
+      }
+      
+      // Check if MediaRecorder is supported
+      if (!window.MediaRecorder) {
+        console.warn('Voice Replay Card: MediaRecorder not supported');
+      } else {
+        console.log('Voice Replay Card: Microphone recording capabilities available');
+      }
+      
+    } catch (error) {
+      console.warn('Voice Replay Card: Error checking microphone availability:', error.message);
     }
   }
 
@@ -171,7 +215,37 @@ class VoiceReplayCard extends HTMLElement {
 
   async _startRecording() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Check if microphone access is supported
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        this._showStatus('Microphone access not supported in this browser', 'error');
+        return;
+      }
+
+      // Check current permission state
+      if (navigator.permissions) {
+        try {
+          const permission = await navigator.permissions.query({ name: 'microphone' });
+          console.log('Microphone permission state:', permission.state);
+          
+          if (permission.state === 'denied') {
+            this._showStatus('Microphone access denied. Please enable in browser settings.', 'error');
+            return;
+          }
+        } catch (permError) {
+          console.warn('Could not check microphone permissions:', permError);
+        }
+      }
+
+      this._showStatus('Requesting microphone access...', 'info');
+      
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+      
       this._mediaRecorder = new MediaRecorder(stream);
       this._recordedChunks = [];
 
@@ -190,8 +264,25 @@ class VoiceReplayCard extends HTMLElement {
       this._mediaRecorder.start();
       this._isRecording = true;
       this._showStatus('Recording... Click to stop', 'info');
+      
     } catch (error) {
-      this._showStatus('Failed to access microphone', 'error');
+      console.error('Microphone access error:', error);
+      
+      let errorMessage = 'Failed to access microphone';
+      
+      if (error.name === 'NotAllowedError') {
+        errorMessage = 'Microphone access denied. Check browser permissions.';
+      } else if (error.name === 'NotFoundError') {
+        errorMessage = 'No microphone found on this device.';
+      } else if (error.name === 'NotSupportedError') {
+        errorMessage = 'Microphone access not supported in this browser.';
+      } else if (error.name === 'SecurityError') {
+        errorMessage = 'Microphone access blocked by security policy. Try HTTPS.';
+      } else if (error.name === 'AbortError') {
+        errorMessage = 'Microphone access aborted.';
+      }
+      
+      this._showStatus(errorMessage, 'error');
     }
   }
 
@@ -295,6 +386,82 @@ class VoiceReplayCard extends HTMLElement {
     this._ttsText = event.target.value;
   }
 
+  _showMicrophoneHelp() {
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isMobile = isAndroid || isIOS;
+    const isHomeAssistantApp = window.location.href.includes('homeassistant://') || 
+                               window.navigator.userAgent.includes('Home Assistant');
+
+    let helpMessage = `🎤 Microphone Troubleshooting
+
+📱 Platform: ${isMobile ? (isAndroid ? 'Android' : 'iOS') : 'Desktop'}
+🏠 App: ${isHomeAssistantApp ? 'Home Assistant App' : 'Web Browser'}
+
+`;
+
+    if (isHomeAssistantApp && isAndroid) {
+      helpMessage += `📋 Android Home Assistant App:
+1. Open Android Settings → Apps → Home Assistant
+2. Go to Permissions → Microphone → Allow
+3. Restart Home Assistant app
+4. Try recording again
+
+⚠️ Alternative: Open in Chrome browser instead:
+1. Go to Settings → More → Open in default browser
+2. Allow microphone when prompted`;
+    } else if (isHomeAssistantApp && isIOS) {
+      helpMessage += `📋 iOS Home Assistant App:
+1. Open iOS Settings → Privacy & Security → Microphone
+2. Find Home Assistant and enable it
+3. Restart Home Assistant app
+4. Try recording again
+
+⚠️ Alternative: Open in Safari browser instead:
+1. Tap ⋯ → Open in Safari
+2. Allow microphone when prompted`;
+    } else if (isAndroid) {
+      helpMessage += `📋 Android Browser:
+1. Tap the 🔒 icon in address bar
+2. Enable Microphone permission
+3. Refresh the page and try again
+
+OR:
+1. Go to Browser Settings → Site Settings → Microphone
+2. Allow microphone for this site`;
+    } else if (isIOS) {
+      helpMessage += `📋 iOS Safari:
+1. Go to iOS Settings → Safari → Website Settings
+2. Find Microphone → Allow
+3. Refresh the page and try again
+
+OR:
+1. Tap 🔒 in address bar → Website Settings
+2. Enable Microphone`;
+    } else {
+      helpMessage += `📋 Desktop Browser:
+1. Click the 🔒 or 🛡️ icon in address bar
+2. Allow microphone access
+3. Refresh the page and try again
+
+Chrome: Site Settings → Microphone → Allow
+Firefox: Permissions → Use Microphone → Allow
+Edge: Site permissions → Microphone → Allow`;
+    }
+
+    helpMessage += `
+
+🔧 Still not working?
+• Ensure your device has a working microphone
+• Try closing other apps using the microphone
+• Check if HTTPS is enabled (required for microphone)
+• Try a different browser
+
+📝 Technical info available in browser console (F12)`;
+
+    alert(helpMessage);
+  }
+
   _render() {
     // Prevent rendering if we're in the middle of loading
     if (this._loadingMediaPlayers) {
@@ -347,6 +514,9 @@ class VoiceReplayCard extends HTMLElement {
               <div class="controls">
                 <button id="play-btn" ${!this._recordedAudio || this._isRecording ? 'disabled' : ''}>
                   ▶️ Play Recording
+                </button>
+                <button id="mic-help-btn" class="help-button" title="Microphone troubleshooting">
+                  ❓ Mic Help
                 </button>
               </div>
             </div>
@@ -519,6 +689,17 @@ class VoiceReplayCard extends HTMLElement {
           opacity: 0.6;
         }
 
+        .help-button {
+          background: var(--secondary-background-color, #f0f0f0);
+          color: var(--secondary-text-color);
+          font-size: 12px;
+          padding: 6px 10px;
+        }
+
+        .help-button:hover:not(:disabled) {
+          background: var(--divider-color);
+        }
+
         .status {
           padding: 10px;
           margin: 10px 0;
@@ -577,6 +758,11 @@ class VoiceReplayCard extends HTMLElement {
     const ttsText = this.querySelector('#tts-text');
     if (ttsText) {
       ttsText.addEventListener('input', (e) => this._onTtsTextChange(e));
+    }
+
+    const micHelpBtn = this.querySelector('#mic-help-btn');
+    if (micHelpBtn) {
+      micHelpBtn.addEventListener('click', () => this._showMicrophoneHelp());
     }
   }
 }
