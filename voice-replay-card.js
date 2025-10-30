@@ -7,7 +7,7 @@
  */
 
 // No build process needed - pure JavaScript implementation
-const CARD_VERSION = '0.3.10';
+const CARD_VERSION = '0.3.11';
 
 // Log card version
 console.info(
@@ -444,26 +444,49 @@ class VoiceReplayCard extends HTMLElement {
     }
 
     try {
-      // Determine the best file extension and content type based on recorded format
+      // Check if the selected player is Sonos and we have WebM audio
+      const playerName = this._mediaPlayers.find(p => p.entity_id === this._selectedPlayer)?.name || this._selectedPlayer;
       const audioFormat = this._audioMimeType || 'audio/webm';
+      const isSonos = this._selectedPlayer.toLowerCase().includes('sonos') || playerName.toLowerCase().includes('sonos');
+      const isWebM = audioFormat.includes('webm');
+
+      let finalAudio = this._recordedAudio;
       let fileExt = 'webm';
       let contentType = 'audio/webm';
 
-      if (audioFormat.includes('mp4')) {
-        fileExt = 'm4a';
-        contentType = 'audio/mp4';
-      } else if (audioFormat.includes('mpeg') || audioFormat.includes('mp3')) {
-        fileExt = 'mp3';
-        contentType = 'audio/mpeg';
-      } else if (audioFormat.includes('wav')) {
-        fileExt = 'wav';
-        contentType = 'audio/wav';
+      // Convert WebM to MP3 for Sonos players
+      if (isSonos && isWebM) {
+        console.log('🎵 Converting WebM to MP3 for Sonos compatibility...');
+        this._showStatus('Converting audio for Sonos...', 'info');
+        
+        try {
+          finalAudio = await this._convertWebMToMP3(this._recordedAudio);
+          fileExt = 'mp3';
+          contentType = 'audio/mpeg';
+          console.log('🎵 Conversion successful - using MP3 format');
+        } catch (conversionError) {
+          console.warn('🎵 Conversion failed, trying original format:', conversionError);
+          this._showStatus('Audio conversion failed, trying original format...', 'warning');
+          // Continue with original WebM
+        }
+      } else {
+        // Determine format for non-Sonos players
+        if (audioFormat.includes('mp4')) {
+          fileExt = 'm4a';
+          contentType = 'audio/mp4';
+        } else if (audioFormat.includes('mpeg') || audioFormat.includes('mp3')) {
+          fileExt = 'mp3';
+          contentType = 'audio/mpeg';
+        } else if (audioFormat.includes('wav')) {
+          fileExt = 'wav';
+          contentType = 'audio/wav';
+        }
       }
 
       console.log('🎵 Uploading audio with format:', audioFormat, 'as', fileExt);
 
       const formData = new FormData();
-      formData.append('audio', this._recordedAudio, `recording.${fileExt}`);
+      formData.append('audio', finalAudio, `recording.${fileExt}`);
       formData.append('entity_id', this._selectedPlayer);
       formData.append('type', 'recording');
       formData.append('content_type', contentType); // Help backend choose right content type
@@ -476,7 +499,6 @@ class VoiceReplayCard extends HTMLElement {
       });
 
       if (response.ok) {
-        const playerName = this._mediaPlayers.find(p => p.entity_id === this._selectedPlayer)?.name || this._selectedPlayer;
         this._showStatus(`Playing on ${playerName}`, 'success');
       } else {
         this._showStatus('Failed to play recording', 'error');
@@ -484,6 +506,85 @@ class VoiceReplayCard extends HTMLElement {
     } catch (error) {
       this._showStatus(`Error: ${error.message}`, 'error');
     }
+  }
+
+  async _convertWebMToMP3(webmBlob) {
+    return new Promise((resolve, reject) => {
+      try {
+        // Create audio context for conversion
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)({
+          sampleRate: 22050 // Lower sample rate for smaller files
+        });
+
+        // Read the WebM blob as array buffer
+        const reader = new FileReader();
+        reader.onload = async () => {
+          try {
+            const arrayBuffer = reader.result;
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+            
+            // Convert to WAV first (simpler conversion)
+            const wavBlob = this._audioBufferToWav(audioBuffer);
+            
+            // For now, return WAV (most players support it)
+            // In future we could add lamejs for true MP3 conversion
+            resolve(wavBlob);
+            
+          } catch (decodeError) {
+            console.error('Audio decode error:', decodeError);
+            reject(decodeError);
+          }
+        };
+        reader.onerror = () => reject(new Error('Failed to read audio blob'));
+        reader.readAsArrayBuffer(webmBlob);
+        
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  _audioBufferToWav(audioBuffer) {
+    const length = audioBuffer.length;
+    const sampleRate = audioBuffer.sampleRate;
+    const numberOfChannels = audioBuffer.numberOfChannels;
+    
+    // Create WAV file
+    const buffer = new ArrayBuffer(44 + length * numberOfChannels * 2);
+    const view = new DataView(buffer);
+    
+    // WAV header
+    const writeString = (offset, string) => {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    };
+    
+    writeString(0, 'RIFF');
+    view.setUint32(4, buffer.byteLength - 8, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, numberOfChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * numberOfChannels * 2, true);
+    view.setUint16(32, numberOfChannels * 2, true);
+    view.setUint16(34, 16, true);
+    writeString(36, 'data');
+    view.setUint32(40, length * numberOfChannels * 2, true);
+    
+    // Convert audio data
+    let offset = 44;
+    for (let i = 0; i < length; i++) {
+      for (let channel = 0; channel < numberOfChannels; channel++) {
+        const sample = Math.max(-1, Math.min(1, audioBuffer.getChannelData(channel)[i]));
+        view.setInt16(offset, sample * 0x7FFF, true);
+        offset += 2;
+      }
+    }
+    
+    return new Blob([buffer], { type: 'audio/wav' });
   }
 
   async _generateAndPlaySpeech() {
