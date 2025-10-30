@@ -7,7 +7,7 @@
  */
 
 // No build process needed - pure JavaScript implementation
-const CARD_VERSION = '0.3.5';
+const CARD_VERSION = '0.3.6';
 
 // Log card version
 console.info(
@@ -145,7 +145,14 @@ class VoiceReplayCard extends HTMLElement {
     
     try {
       console.log('Loading media players...');
+      console.log('Making request to:', '/api/voice-replay/media_players');
       const response = await this._hass.fetchWithAuth('/api/voice-replay/media_players');
+      console.log('Response received:', response.status, response.statusText);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       const players = await response.json();
       console.log('Media players loaded:', players);
       
