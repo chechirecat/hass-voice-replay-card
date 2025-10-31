@@ -69,6 +69,27 @@ jobs:
         
         echo "✅ Version consistency validated"
 
+    - name: "Determine release type"
+      id: release_type
+      run: |
+        VERSION="${{ steps.get_version.outputs.version }}"
+        echo "Checking version: $VERSION"
+        
+        # Check if it's a prerelease based on version pattern
+        if [[ "$VERSION" =~ ^0\. ]]; then
+          # Development versions (0.x.x) are prereleases
+          echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          echo "Release type: Development/Debug version (0.x.x) → prerelease"
+        elif [[ "$VERSION" =~ -[0-9A-Za-z.-]+ ]]; then
+          # Versions with suffixes (1.0.0-beta.1, 2.0.0-rc.1) are prereleases
+          echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          echo "Release type: Pre-release version (contains suffix) → prerelease"
+        else
+          # Stable versions (1.0.0, 2.1.0) are full releases
+          echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          echo "Release type: Stable version (1.x.x+) → full release"
+        fi
+
     - name: Create Release Notes
       id: release_notes
       run: |
@@ -120,7 +141,7 @@ jobs:
         release_name: Voice Replay Card ${{ steps.get_version.outputs.tag }}
         body_path: release_notes.md
         draft: false
-        prerelease: false
+        prerelease: ${{ steps.release_type.outputs.is_prerelease }}
 
     - name: Upload voice-replay-card.js
       uses: actions/upload-release-asset@v1
