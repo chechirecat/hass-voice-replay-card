@@ -165,98 +165,23 @@ show_header: true
 
 ## Development
 
-### No Build Process Required
+This card is implemented as pure JavaScript with no build dependencies! 
 
-This card is implemented as pure JavaScript with no build dependencies! Simply edit `voice-replay-card.js` directly.
+**🛠️ [Development Guide →](docs/DEVELOPMENT.md)** - Complete setup, testing, and contribution guide
 
-### Testing
+**📖 [Release Automation →](docs/RELEASE_AUTOMATION.md)** - Automated release process documentation
 
-1. Copy `voice-replay-card.js` to your Home Assistant's `<config>/www/` directory
-2. Add it as a resource in your dashboard
-3. Add the card to test your changes
-4. Use browser developer tools for debugging
-
-### Local Development
-
-For rapid development, you can serve the file locally:
+### Quick Start for Developers
 
 ```bash
-# Serve from your local development directory
-python3 -m http.server 8000
+# Clone repository
+git clone https://github.com/chechirecat/hass-voice-replay-card.git
+
+# Copy to Home Assistant www directory
+cp voice-replay-card.js /path/to/homeassistant/config/www/
+
+# Add as resource and start developing!
 ```
-
-Then add `http://localhost:8000/voice-replay-card.js` as a resource for testing.
-
-### Release Automation
-
-This repository includes automated release scripts to streamline version management and releases.
-
-#### Available Scripts
-
-- **Bash:** `scripts/release.sh` (Linux/macOS/WSL)
-- **PowerShell:** `scripts/release.ps1` (Windows/Cross-platform)
-
-#### Usage
-
-```bash
-# Display help and available options
-./scripts/release.sh --help
-
-# Release with automatic patch increment (0.4.0 → 0.4.1)
-./scripts/release.sh
-
-# Release with specific increment type
-./scripts/release.sh --increment minor  # 0.4.0 → 0.5.0
-./scripts/release.sh --increment major  # 0.4.0 → 1.0.0
-
-# PowerShell (Windows)
-.\scripts\release.ps1 --help
-.\scripts\release.ps1
-.\scripts\release.ps1 -Increment minor
-```
-
-#### What the Script Does
-
-1. **Safety Checks:**
-   - Verifies clean working directory
-   - Confirms you're on the main branch
-   - Checks for uncommitted changes
-
-2. **Version Management:**
-   - Reads current version from `voice-replay-card.js`
-   - Increments version (patch/minor/major)
-   - Checks if new version already exists remotely
-
-3. **Release Process:**
-   - Updates version in `voice-replay-card.js`
-   - Commits the change with appropriate message
-   - Creates and pushes git tag
-   - Triggers GitHub Actions release workflow
-
-#### Version File
-
-Unlike the backend integration, this card has a simpler version management system with the version defined in a single location:
-
-```javascript
-// voice-replay-card.js
-const CARD_VERSION = '0.4.0';
-```
-
-#### Prerequisites for Release
-
-- Clean working directory (no uncommitted changes)
-- Must be on the `main` branch
-- Git remote `origin` must be accessible
-- Proper permissions to push tags to the repository
-
-#### Troubleshooting Releases
-
-- **"Working directory not clean":** Commit or stash your changes first
-- **"Not on main branch":** Switch to main branch before releasing
-- **"Version already exists":** The script will detect and prevent duplicate releases
-- **Permission errors:** Ensure you have push access to the repository
-
-📖 **[Complete Release Guide →](docs/RELEASE_AUTOMATION.md)** - Detailed documentation for release automation
 
 ## Contributing
 
