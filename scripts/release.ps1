@@ -1,5 +1,11 @@
 # Automated Release Script for hass-voice-replay-card (PowerShell version)
 # This script automates the release process for the card
+#
+# IMPORTANT: You may need to set PowerShell execution policy before running:
+# Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+# See docs/POWERSHELL_EXECUTION_POLICY.md for details
+#
+# Usage: .\scripts\release.ps1 [-Help]
 
 param(
     [switch]$Help

@@ -223,6 +223,47 @@ title: "Custom Title"
 show_header: false
 ```
 
+## Development Tools
+
+### Version Consistency Checking
+
+The repository includes scripts to verify version consistency across files and git tags:
+
+**Note for Windows PowerShell users:** Before running PowerShell scripts, you may need to set the execution policy. See **[PowerShell Execution Policy Guide](POWERSHELL_EXECUTION_POLICY.md)** for detailed instructions.
+
+```powershell
+# Quick setup - allows local scripts to run
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+**Shell Script (Linux/macOS/WSL):**
+```bash
+# Check version consistency
+./scripts/check-version-consistency.sh
+```
+
+**PowerShell Script (Windows/Cross-platform):**
+```powershell
+# Check version consistency
+.\scripts\check-version-consistency.ps1 -Verbose
+```
+
+These scripts verify that:
+- ✅ **Card Version**: `CARD_VERSION` in `voice-replay-card.js`
+- ✅ **Git Tags**: Latest tag matches card version (format: `v1.0.0`)
+
+### Release Automation
+
+Use the automated release scripts for version management:
+
+```bash
+# Shell version
+./scripts/release.sh
+
+# PowerShell version  
+.\scripts\release.ps1
+```
+
 ## Release Process
 
 ### Automated Release

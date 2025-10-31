@@ -11,6 +11,7 @@ This directory contains comprehensive documentation for the Voice Replay Card.
 ### For Developers
 - **[Development Guide](DEVELOPMENT.md)** - Complete development setup and contribution guidelines
 - **[Release Automation](RELEASE_AUTOMATION.md)** - Automated release process and version management
+- **[PowerShell Execution Policy](POWERSHELL_EXECUTION_POLICY.md)** - Windows PowerShell setup requirements
 
 ## 🚀 Quick Start
 
