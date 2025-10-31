@@ -66,11 +66,12 @@ get_card_version() {
 check_remote_tag() {
     local version="$1"
     local tag="v$version"
-    
+
     # Fetch latest tags from remote
     git fetch --tags > /dev/null 2>&1
-    
-    if git ls-remote --tags origin | grep -q "refs/tags/$tag$"; then
+
+    # Check if tag exists locally after fetch
+    if git tag -l | grep -q "^$tag$"; then
         return 0  # Tag exists
     else
         return 1  # Tag doesn't exist
@@ -81,14 +82,14 @@ check_remote_tag() {
 increment_version() {
     local version="$1"
     local increment_type="$2"
-    
+
     # Parse version (assuming semantic versioning: major.minor.patch)
     local IFS='.'
     read -ra VERSION_PARTS <<< "$version"
     local major="${VERSION_PARTS[0]}"
     local minor="${VERSION_PARTS[1]}"
     local patch="${VERSION_PARTS[2]}"
-    
+
     case "$increment_type" in
         "major")
             major=$((major + 1))
@@ -107,7 +108,7 @@ increment_version() {
             exit 1
             ;;
     esac
-    
+
     echo "$major.$minor.$patch"
 }
 
@@ -115,7 +116,7 @@ increment_version() {
 update_card_version() {
     local new_version="$1"
     log_info "Updating $CARD_FILE to version $new_version"
-    
+
     # Use sed to replace the version
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS sed
@@ -124,7 +125,7 @@ update_card_version() {
         # Linux sed
         sed -i "s/CARD_VERSION = '[^']*'/CARD_VERSION = '$new_version'/" "$CARD_FILE"
     fi
-    
+
     log_success "Card version updated to $new_version"
 }
 
@@ -132,11 +133,11 @@ update_card_version() {
 main() {
     echo "🚀 Card Release Script"
     echo "====================="
-    
+
     # Pre-flight checks
     check_git_repo
     check_working_directory
-    
+
     # Check current version
     log_info "Checking current card version..."
     current_version=$(get_card_version)
@@ -145,11 +146,11 @@ main() {
         exit 1
     fi
     log_success "Current version: $current_version"
-    
+
     # Check if current version already exists as tag
     if check_remote_tag "$current_version"; then
         log_warning "Version $current_version already exists as remote tag!"
-        
+
         echo ""
         echo "Options:"
         echo "1) Auto-increment patch version (recommended)"
@@ -157,9 +158,9 @@ main() {
         echo "3) Auto-increment major version"
         echo "4) Manually specify new version"
         echo "5) Exit"
-        
+
         read -p "Choose option (1-5): " choice
-        
+
         case "$choice" in
             1)
                 new_version=$(increment_version "$current_version" "patch")
@@ -187,20 +188,20 @@ main() {
                 exit 1
                 ;;
         esac
-        
+
         # Check if new version already exists
         if check_remote_tag "$new_version"; then
             log_error "Version $new_version also already exists as remote tag!"
             exit 1
         fi
-        
+
     else
         log_info "Current version $current_version is not yet tagged. Using it for release."
         new_version="$current_version"
     fi
-    
+
     log_info "Releasing version: $new_version"
-    
+
     # Confirmation
     echo ""
     read -p "Proceed with release $new_version? (y/N): " confirm
@@ -208,33 +209,33 @@ main() {
         log_info "Release cancelled."
         exit 0
     fi
-    
+
     # Update version if needed
     if [[ "$new_version" != "$current_version" ]]; then
         log_info "Updating card version..."
         update_card_version "$new_version"
-        
+
         # Commit version changes
         git add "$CARD_FILE"
         git commit -m "chore: bump version to $new_version"
         log_success "Version changes committed"
-        
+
         # Push changes
         log_info "Pushing version changes to remote..."
         git push origin main
         log_success "Version changes pushed to remote"
     fi
-    
+
     # Create and push tag
     local tag="v$new_version"
     log_info "Creating tag $tag..."
     git tag "$tag"
     log_success "Tag $tag created"
-    
+
     log_info "Pushing tag to remote..."
     git push origin "$tag"
     log_success "Tag $tag pushed to remote"
-    
+
     echo ""
     log_success "🎉 Release $new_version completed successfully!"
     log_info "The release workflow should now be triggered automatically."

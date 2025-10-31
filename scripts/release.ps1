@@ -64,12 +64,13 @@ function Get-CardVersion {
 function Test-RemoteTag {
     param([string]$Version)
     $tag = "v$Version"
-    
+
     # Fetch latest tags from remote
     git fetch --tags 2>$null
-    
-    $remoteTags = git ls-remote --tags origin 2>$null
-    return $remoteTags -match "refs/tags/$tag`$"
+
+    # Check if tag exists locally after fetch
+    $localTags = git tag -l
+    return $localTags -contains $tag
 }
 
 function Step-Version {
@@ -78,7 +79,7 @@ function Step-Version {
     $major = [int]$versionParts[0]
     $minor = [int]$versionParts[1]
     $patch = [int]$versionParts[2]
-    
+
     switch ($IncrementType) {
         "major" {
             $major++
@@ -97,20 +98,20 @@ function Step-Version {
             exit 1
         }
     }
-    
+
     return "$major.$minor.$patch"
 }
 
 function Update-CardVersion {
     param([string]$NewVersion)
     Write-Info "Updating $CardFile to version $NewVersion"
-    
+
     $content = Get-Content $CardFile -Raw
     $pattern = "CARD_VERSION = '[^']*'"
     $replacement = "CARD_VERSION = '$NewVersion'"
     $content = $content -replace $pattern, $replacement
     Set-Content $CardFile $content -NoNewline
-    
+
     Write-Success "Card version updated to $NewVersion"
 }
 
@@ -162,7 +163,7 @@ Write-Success "Current version: $currentVersion"
 # Check if current version already exists as tag
 if (Test-RemoteTag $currentVersion) {
     Write-Warning "Version $currentVersion already exists as remote tag!"
-    
+
     Write-Host ""
     Write-Host "Options:"
     Write-Host "1) Auto-increment patch version - recommended"
@@ -170,9 +171,9 @@ if (Test-RemoteTag $currentVersion) {
     Write-Host "3) Auto-increment major version"
     Write-Host "4) Manually specify new version"
     Write-Host "5) Exit"
-    
+
     $choice = Read-Host "Choose option (1-5)"
-    
+
     switch ($choice) {
         "1" {
             $newVersion = Step-Version $currentVersion "patch"
@@ -200,7 +201,7 @@ if (Test-RemoteTag $currentVersion) {
             exit 1
         }
     }
-    
+
     # Check if new version already exists
     if (Test-RemoteTag $newVersion) {
         Write-ErrorMessage "Version $newVersion also already exists as remote tag!"
@@ -226,12 +227,12 @@ if ($confirm -notmatch '^[Yy]$') {
 if ($newVersion -ne $currentVersion) {
     Write-Info "Updating card version..."
     Update-CardVersion $newVersion
-    
+
     # Commit version changes
     git add $CardFile
     git commit -m "chore: bump version to $newVersion"
     Write-Success "Version changes committed"
-    
+
     # Push changes
     Write-Info "Pushing version changes to remote..."
     git push origin main
