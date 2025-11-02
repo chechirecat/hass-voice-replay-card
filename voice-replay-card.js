@@ -56,12 +56,25 @@ class VoiceReplayCard extends HTMLElement {
     return {
       type: 'custom:voice-replay-card',
       title: 'Voice Replay',
+      show_header: true,
     };
   }
 
   static getConfigElement() {
     // Return undefined - we don't have a config element yet
     return undefined;
+  }
+
+  static getCardDescription() {
+    return 'Record voice messages and generate text-to-speech for your media players';
+  }
+
+  static getCardName() {
+    return 'Voice Replay Card';
+  }
+
+  static getPreview() {
+    return true;
   }
 
   // Required method for Home Assistant cards
@@ -1152,6 +1165,7 @@ The microphone gain delay prevents clicking sounds when recording starts. Differ
     console.log('🎨 config exists:', !!this.config);
     console.log('🎨 _mediaPlayers exists:', !!this._mediaPlayers);
     console.log('🎨 _mediaPlayers length:', this._mediaPlayers?.length || 0);
+    console.log('🎨 _hass exists:', !!this._hass);
 
     // Prevent rendering if we're in the middle of loading
     if (this._loadingMediaPlayers) {
@@ -1166,6 +1180,10 @@ The microphone gain delay prevents clicking sounds when recording starts. Differ
       return;
     }
 
+    // Check if we're in preview mode (no hass available)
+    const isPreviewMode = !this._hass;
+    console.log('🎨 Preview mode:', isPreviewMode);
+
     this.innerHTML = `
       <ha-card>
         ${this.config.show_header ? `
@@ -1177,9 +1195,18 @@ The microphone gain delay prevents clicking sounds when recording starts. Differ
         <div class="card-content">
           <div class="player-selector">
             <label>Media Player:</label>
-            <select id="player-select">
+            <select id="player-select" ${isPreviewMode ? 'disabled' : ''}>
               <option value="">Select a player</option>
               ${(() => {
+                if (isPreviewMode) {
+                  // Show demo options in preview mode
+                  return `
+                    <option value="demo">🔊 Living Room Group (3 speakers)</option>
+                    <option value="demo">Kitchen Speaker</option>
+                    <option value="demo">Office Speaker</option>
+                  `;
+                }
+
                 console.log('🎯 Rendering dropdown options...');
                 console.log('🎯 _mediaPlayers available:', !!this._mediaPlayers);
                 console.log('🎯 _mediaPlayers length:', this._mediaPlayers?.length || 0);
@@ -1205,30 +1232,30 @@ The microphone gain delay prevents clicking sounds when recording starts. Differ
 
           <div class="mode-selector">
             <label>
-              <input type="radio" name="mode" value="record" ${this._mode === 'record' ? 'checked' : ''}>
+              <input type="radio" name="mode" value="record" ${this._mode === 'record' ? 'checked' : ''} ${isPreviewMode ? 'disabled' : ''}>
               🎤 Record Voice
             </label>
             <label>
-              <input type="radio" name="mode" value="tts" ${this._mode === 'tts' ? 'checked' : ''}>
+              <input type="radio" name="mode" value="tts" ${this._mode === 'tts' ? 'checked' : ''} ${isPreviewMode ? 'disabled' : ''}>
               🗣️ Text-to-Speech
             </label>
           </div>
 
           ${this._mode === 'record' ? `
             <div class="record-section">
-              <button class="record-button ${this._isRecording ? 'recording' : ''} ${this._isPreparingToRecord ? 'preparing' : ''}" id="record-btn">
+              <button class="record-button ${this._isRecording ? 'recording' : ''} ${this._isPreparingToRecord ? 'preparing' : ''}" id="record-btn" ${isPreviewMode ? 'disabled' : ''}>
                 ${this._currentCountdown > 0 ? this._currentCountdown : 
                   this._isPreparingToRecord ? '🎤' :
                   this._isRecording ? '⏹️' : '🎤'}
               </button>
               <div class="controls">
-                <button id="play-btn" ${!this._recordedAudio || this._isRecording || this._isPreparingToRecord || this._isProcessingRecording ? 'disabled' : ''}>
+                <button id="play-btn" ${!this._recordedAudio || this._isRecording || this._isPreparingToRecord || this._isProcessingRecording || isPreviewMode ? 'disabled' : ''}>
                   ${this._isProcessingRecording ? '⏳ Processing...' : '▶️ Play Recording'}
                 </button>
-                <button id="mic-help-btn" class="help-button" title="Microphone troubleshooting">
+                <button id="mic-help-btn" class="help-button" title="Microphone troubleshooting" ${isPreviewMode ? 'disabled' : ''}>
                   ❓ Mic Help
                 </button>
-                <button id="client-settings-btn" class="help-button" title="Client-specific microphone settings">
+                <button id="client-settings-btn" class="help-button" title="Client-specific microphone settings" ${isPreviewMode ? 'disabled' : ''}>
                   ⚙️ Settings
                 </button>
               </div>
@@ -1238,8 +1265,9 @@ The microphone gain delay prevents clicking sounds when recording starts. Differ
               <textarea 
                 id="tts-text"
                 placeholder="Enter the text you want to convert to speech..."
+                ${isPreviewMode ? 'disabled' : ''}
               >${this._ttsText}</textarea>
-              <button class="tts-button" id="tts-btn">
+              <button class="tts-button" id="tts-btn" ${isPreviewMode ? 'disabled' : ''}>
                 🗣️ Generate & Play Speech
               </button>
             </div>
@@ -1247,6 +1275,12 @@ The microphone gain delay prevents clicking sounds when recording starts. Differ
 
           ${this._status ? `
             <div class="status ${this._statusType}">${this._status}</div>
+          ` : ''}
+
+          ${isPreviewMode ? `
+            <div class="status info">
+              ℹ️ This is a preview. Add the card to your dashboard to use it.
+            </div>
           ` : ''}
         </div>
       </ha-card>
@@ -1524,10 +1558,12 @@ try {
 // Register with Home Assistant's customCards registry
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: 'custom:voice-replay-card',
+  type: 'voice-replay-card',
   name: 'Voice Replay Card',
-  description: 'A card for recording voice messages and generating TTS',
+  description: 'Record voice messages and generate text-to-speech for your media players',
   preview: true,
+  documentationURL: 'https://github.com/chechirecat/hass-voice-replay-card',
+  version: CARD_VERSION,
 });
 
 // Hook into Home Assistant's scoped registry system
