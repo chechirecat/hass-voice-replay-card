@@ -328,7 +328,25 @@ class VoiceReplayCard extends HTMLElement {
         audio: true // Minimal constraints
       });
 
-      this._mediaRecorder = new MediaRecorder(stream);
+      // Use same universal format priority as main recording
+      let mimeType = 'audio/webm';
+      const supportedTypes = [
+        'audio/mpeg',          // MP3 - Best universal compatibility  
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4', 
+        'audio/wav'
+      ];
+
+      for (const type of supportedTypes) {
+        if (MediaRecorder.isTypeSupported(type)) {
+          mimeType = type;
+          console.log('📱 Simple recording format:', mimeType);
+          break;
+        }
+      }
+
+      this._mediaRecorder = new MediaRecorder(stream, { mimeType });
       this._recordedChunks = [];
 
       this._mediaRecorder.ondataavailable = (event) => {
@@ -338,8 +356,9 @@ class VoiceReplayCard extends HTMLElement {
       };
 
       this._mediaRecorder.onstop = () => {
-        const recordedBlob = new Blob(this._recordedChunks, { type: 'audio/webm' });
+        const recordedBlob = new Blob(this._recordedChunks, { type: mimeType });
         this._recordedAudio = recordedBlob;
+        this._audioMimeType = mimeType;
         stream.getTracks().forEach(track => track.stop());
       };
 
@@ -474,19 +493,21 @@ class VoiceReplayCard extends HTMLElement {
       
       // Set up MediaRecorder with processed stream
       let mimeType = 'audio/webm';
+      
+      // Prioritize formats for best universal compatibility
       const supportedTypes = [
-        'audio/mp4',           // Best compatibility and compression
-        'audio/mpeg',          // MP3 - universal support
-        'audio/webm;codecs=opus',  // Good compression, modern browsers
-        'audio/webm',          // Fallback WebM
-        'audio/wav'            // Largest but universal
+        'audio/mpeg',          // MP3 - Best universal compatibility
+        'audio/webm;codecs=opus',  // Good compression, will be converted
+        'audio/webm',          // Will be converted to MP3
+        'audio/mp4',           // Will be converted to MP3
+        'audio/wav'            // Universal but large
       ];
 
       console.log('🎵 Checking browser MediaRecorder format support:');
       for (const type of supportedTypes) {
         if (MediaRecorder.isTypeSupported(type)) {
           mimeType = type;
-          console.log('� Selected recording format:', mimeType);
+          console.log('📱 Selected recording format:', mimeType);
           break;
         }
       }
@@ -909,13 +930,13 @@ class VoiceReplayCard extends HTMLElement {
         playerName: playerName
       });
 
+      this._showStatus('Uploading and playing...', 'info');
+
       const formData = new FormData();
       formData.append('audio', this._recordedAudio, `recording.${fileExt}`);
       formData.append('entity_id', this._selectedPlayer);
       formData.append('type', 'recording');
       formData.append('content_type', contentType);
-
-      this._showStatus('Uploading and playing...', 'info');
 
       const response = await this._hass.fetchWithAuth('/api/voice-replay/upload', {
         method: 'POST',
