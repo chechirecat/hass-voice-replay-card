@@ -46,6 +46,9 @@ class VoiceReplayCard extends HTMLElement {
     this._countdownTimer = null;
     this._currentCountdown = 0;
     this._isProcessingRecording = false;
+    // Configuration
+    this._ttsConfig = null;
+    this._configLoaded = false;
   }
 
   static getStubConfig() {
@@ -95,6 +98,11 @@ class VoiceReplayCard extends HTMLElement {
     // Only load media players once when hass is first set
     if (this.config && !this._mediaPlayersLoaded) {
       this._loadMediaPlayers();
+    }
+
+    // Load TTS configuration if not already loaded
+    if (this.config && !this._configLoaded) {
+      this._loadTTSConfig();
     }
 
     // Check microphone availability when hass is set
@@ -228,6 +236,34 @@ class VoiceReplayCard extends HTMLElement {
     }
   }
 
+  async _loadTTSConfig() {
+    try {
+      console.log('🔧 Loading TTS configuration...');
+      const response = await this._hass.fetchWithAuth('/api/voice-replay/tts_config');
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      this._ttsConfig = await response.json();
+      this._configLoaded = true;
+
+      console.log('🔧 TTS config loaded:', this._ttsConfig);
+      console.log('🔧 Prepend silence seconds:', this._ttsConfig.prepend_silence_seconds);
+
+    } catch (error) {
+      console.error('Failed to load TTS config:', error);
+      // Use default configuration
+      this._ttsConfig = {
+        prepend_silence_seconds: 3,
+        volume_boost_enabled: true,
+        volume_boost_amount: 0.1
+      };
+      this._configLoaded = true;
+      console.log('🔧 Using default TTS config:', this._ttsConfig);
+    }
+  }
+
   _showStatus(message, type = 'info') {
     this._status = message;
     this._statusType = type;
@@ -297,6 +333,16 @@ class VoiceReplayCard extends HTMLElement {
 
   async _startCountdown() {
     try {
+      // Ensure TTS config is loaded before starting
+      if (!this._configLoaded) {
+        this._showStatus('⏳ Loading configuration...', 'info');
+        await this._loadTTSConfig();
+      }
+
+      // Get countdown duration from backend configuration
+      const countdownSeconds = this._ttsConfig?.prepend_silence_seconds || 3;
+      console.log(`🎤 Using ${countdownSeconds} second countdown from backend config`);
+
       // First, check if we can access microphone and set it up
       this._isPreparingToRecord = true;
       this._showStatus('🎤 Preparing microphone...', 'info');
@@ -343,12 +389,78 @@ class VoiceReplayCard extends HTMLElement {
       // Wait for microphone to be truly ready using multiple detection methods
       await this._waitForMicrophoneReady(stream);
 
-      // Now that we know mic is ready, start the countdown
-      console.log('🎤 Microphone confirmed ready, starting countdown...');
+      // Now that we know mic is ready, start recording IMMEDIATELY and begin countdown
+      console.log('🎤 Microphone confirmed ready, starting recording with countdown...');
       this._showStatus('🎙️ Get ready to speak...', 'info');
 
-      // Start 2-second countdown
-      this._currentCountdown = 2;
+      // Start recording immediately - the countdown period will become the silence
+      this._startRecordingWithCountdown(stream, countdownSeconds);
+
+    } catch (error) {
+      console.error('Failed to prepare microphone:', error);
+      this._isPreparingToRecord = false;
+      this._handleMicrophoneError(error);
+      this._render();
+    }
+  }
+
+  async _startRecordingWithCountdown(stream, countdownSeconds) {
+    try {
+      // Set up MediaRecorder immediately
+      let mimeType = 'audio/webm';
+      const supportedTypes = [
+        'audio/mp4',           // Best compatibility and compression
+        'audio/mpeg',          // MP3 - universal support
+        'audio/webm;codecs=opus',  // Good compression, modern browsers
+        'audio/webm',          // Fallback WebM
+        'audio/wav'            // Largest but universal
+      ];
+
+      console.log('🎵 Checking browser MediaRecorder format support:');
+      for (const type of supportedTypes) {
+        if (MediaRecorder.isTypeSupported(type)) {
+          mimeType = type;
+          console.log('🎵 Selected recording format:', mimeType);
+          break;
+        }
+      }
+
+      this._mediaRecorder = new MediaRecorder(stream, { mimeType });
+      this._recordedChunks = [];
+
+      this._mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          this._recordedChunks.push(event.data);
+        }
+      };
+
+      this._mediaRecorder.onstop = () => {
+        const recordedBlob = new Blob(this._recordedChunks, { type: mimeType });
+        this._recordedAudio = recordedBlob;
+        this._audioMimeType = mimeType;
+        stream.getTracks().forEach(track => track.stop());
+        console.log('Recording stopped and audio blob created with format:', mimeType);
+
+        // Start processing phase
+        this._isProcessingRecording = true;
+        this._showStatus('🔄 Processing recording...', 'info');
+        this._render();
+
+        // Simulate processing time and then mark as ready
+        setTimeout(() => {
+          this._isProcessingRecording = false;
+          this._showStatus('✅ Recording ready to play!', 'success');
+          this._render();
+        }, 1000);
+      };
+
+      // Start recording immediately
+      this._mediaRecorder.start();
+      this._isRecording = true;
+      this._isPreparingToRecord = false;
+
+      // Start countdown display while recording
+      this._currentCountdown = countdownSeconds;
       this._updateCountdownDisplay();
 
       this._countdownTimer = setInterval(() => {
@@ -356,16 +468,18 @@ class VoiceReplayCard extends HTMLElement {
         if (this._currentCountdown > 0) {
           this._updateCountdownDisplay();
         } else {
-          // Countdown finished - start recording
+          // Countdown finished - show "ON AIR"
           clearInterval(this._countdownTimer);
           this._countdownTimer = null;
-          this._startActualRecording(stream);
+          this._showStatus('🔴 ON AIR - Recording... Click to stop', 'success');
+          this._render();
         }
       }, 1000);
 
     } catch (error) {
-      console.error('Failed to prepare microphone:', error);
+      console.error('Failed to start recording with countdown:', error);
       this._isPreparingToRecord = false;
+      this._isRecording = false;
       this._handleMicrophoneError(error);
       this._render();
     }
@@ -430,10 +544,10 @@ class VoiceReplayCard extends HTMLElement {
 
       let checkCount = 0;
       const maxChecks = 20; // Check for up to 2 seconds (100ms intervals)
-      
+
       const checkAudio = () => {
         analyser.getByteFrequencyData(dataArray);
-        
+
         // Calculate average audio level
         const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
         console.log(`🎤 Audio level check ${checkCount + 1}: ${average.toFixed(2)}`);
@@ -476,77 +590,6 @@ class VoiceReplayCard extends HTMLElement {
     this._render();
   }
 
-  async _startActualRecording(stream) {
-    try {
-      // Try different MIME types with preference order: MP4, MP3, WebM, WAV
-      let mimeType = 'audio/webm';
-      const supportedTypes = [
-        'audio/mp4',           // Best compatibility and compression
-        'audio/mpeg',          // MP3 - universal support
-        'audio/webm;codecs=opus',  // Good compression, modern browsers
-        'audio/webm',          // Fallback WebM
-        'audio/wav'            // Largest but universal
-      ];
-
-      console.log('🎵 Checking browser MediaRecorder format support:');
-      supportedTypes.forEach(type => {
-        const supported = MediaRecorder.isTypeSupported(type);
-        console.log(`🎵   ${type}: ${supported ? '✅ Supported' : '❌ Not supported'}`);
-      });
-
-      for (const type of supportedTypes) {
-        if (MediaRecorder.isTypeSupported(type)) {
-          mimeType = type;
-          console.log('🎵 Selected recording format:', mimeType);
-          break;
-        }
-      }
-
-      console.log('🎵 Final selected MIME type:', mimeType);
-
-      this._mediaRecorder = new MediaRecorder(stream, { mimeType });
-      this._recordedChunks = [];
-
-      this._mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          this._recordedChunks.push(event.data);
-        }
-      };
-
-      this._mediaRecorder.onstop = () => {
-        const recordedBlob = new Blob(this._recordedChunks, { type: mimeType });
-        this._recordedAudio = recordedBlob;
-        this._audioMimeType = mimeType; // Store the actual format used
-        stream.getTracks().forEach(track => track.stop());
-        console.log('Recording stopped and audio blob created with format:', mimeType);
-        
-        // Start processing phase
-        this._isProcessingRecording = true;
-        this._showStatus('🔄 Processing recording...', 'info');
-        this._render();
-        
-        // Simulate processing time and then mark as ready
-        setTimeout(() => {
-          this._isProcessingRecording = false;
-          this._showStatus('✅ Recording ready to play!', 'success');
-          this._render();
-        }, 1000);
-      };
-
-      this._mediaRecorder.start();
-      this._isRecording = true;
-      this._isPreparingToRecord = false;
-      this._showStatus('🔴 ON AIR - Recording... Click to stop', 'success');
-      this._render();
-
-    } catch (error) {
-      console.error('Failed to start recording:', error);
-      this._isPreparingToRecord = false;
-      this._handleMicrophoneError(error);
-      this._render();
-    }
-  }
-
   _handleMicrophoneError(error) {
     let errorMessage = 'Failed to access microphone';
     let showHelpButton = false;
@@ -587,6 +630,12 @@ class VoiceReplayCard extends HTMLElement {
       this._isRecording = false;
       // Note: _isProcessingRecording will be set to true in the onstop handler
       // and then set to false after processing is complete
+    }
+
+    // Clean up countdown timer if still running
+    if (this._countdownTimer) {
+      clearInterval(this._countdownTimer);
+      this._countdownTimer = null;
     }
   }
 
