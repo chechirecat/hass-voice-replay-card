@@ -35,6 +35,7 @@ class VoiceReplayCard extends HTMLElement {
     this._ttsText = '';
     this._status = '';
     this._statusType = 'info';
+    this._statusTimeout = null;
     this._mediaRecorder = null;
     this._recordedChunks = [];
     this._mediaPlayersLoaded = false;
@@ -266,13 +267,55 @@ class VoiceReplayCard extends HTMLElement {
   }
 
   _showStatus(message, type = 'info') {
+    // Cancel any existing auto-clear timeout
+    if (this._statusTimeout) {
+      clearTimeout(this._statusTimeout);
+      this._statusTimeout = null;
+    }
+    
     this._status = message;
     this._statusType = type;
     this._render();
-    setTimeout(() => {
-      this._status = '';
-      this._render();
-    }, 5000);
+    
+    // Determine timeout duration based on message type and content
+    let timeoutDuration = 5000; // Default 5 seconds
+    
+    // Temporary info messages - shorter timeout
+    const isTemporary = type === 'info' && (
+      message.includes('Loading') ||
+      message.includes('Preparing') || 
+      message.includes('Retrying') ||
+      message.includes('Processing')
+    );
+    
+    // Recording states and important messages - longer timeout
+    const isImportant = type === 'success' || type === 'error' || type === 'warning' ||
+                       message.includes('Recording') ||
+                       message.includes('ON AIR') ||
+                       message.includes('ready to play');
+    
+    if (isTemporary) {
+      timeoutDuration = 3000; // 3 seconds for temporary messages
+    } else if (isImportant) {
+      timeoutDuration = 8000; // 8 seconds for important messages
+    }
+    
+    // Set timeout for all messages
+    this._statusTimeout = setTimeout(() => {
+      if (this._status === message) { // Only clear if this message is still showing
+        this._status = '';
+        this._render();
+      }
+    }, timeoutDuration);
+  }
+
+  _clearStatus() {
+    if (this._statusTimeout) {
+      clearTimeout(this._statusTimeout);
+      this._statusTimeout = null;
+    }
+    this._status = '';
+    this._render();
   }
 
   // Fallback method with simpler audio constraints
@@ -1420,6 +1463,20 @@ The microphone gain delay prevents clicking sounds when recording starts. Differ
     const clientSettingsBtn = this.querySelector('#client-settings-btn');
     if (clientSettingsBtn) {
       clientSettingsBtn.addEventListener('click', () => this._showClientSettings());
+    }
+  }
+
+  disconnectedCallback() {
+    // Clean up any pending status timeout
+    if (this._statusTimeout) {
+      clearTimeout(this._statusTimeout);
+      this._statusTimeout = null;
+    }
+    
+    // Clean up countdown timer if it exists
+    if (this._countdownTimer) {
+      clearInterval(this._countdownTimer);
+      this._countdownTimer = null;
     }
   }
 }
