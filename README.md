@@ -9,7 +9,11 @@
 
 ## Screenshot
 
-![Voice Replay Card Preview](screenshots/voice-replay-card.png)
+![Voice Recording Preview](screenshots/voice-replay-card-voice-recording.png)
+![Voice Recording Settings Preview](screenshots/voice-replay-card-voice-recording-settings.png)
+
+![Text-to-Speech Preview](screenshots/voice-replay-card-tts.png)
+
 
 ## Installation
 
