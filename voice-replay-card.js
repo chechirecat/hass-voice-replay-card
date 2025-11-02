@@ -75,6 +75,7 @@ class VoiceReplayCard extends HTMLElement {
     this.config = {
       title: 'Voice Replay',
       show_header: true,
+      microphone_gain_delay: 0.1, // Default delay in seconds (0.1-2.0)
       ...config,
     };
 
@@ -372,7 +373,7 @@ class VoiceReplayCard extends HTMLElement {
         return;
       }
 
-      // Get microphone access and set it up
+      // Get microphone access and set it up (always the same flow now)
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           echoCancellation: true,
@@ -389,12 +390,12 @@ class VoiceReplayCard extends HTMLElement {
       // Wait for microphone to be truly ready using multiple detection methods
       await this._waitForMicrophoneReady(stream);
 
-      // Now that we know mic is ready, start recording IMMEDIATELY and begin countdown
-      console.log('🎤 Microphone confirmed ready, starting recording with countdown...');
+      // Now that mic is ready, start recording with volume control
+      console.log('🎤 Microphone confirmed ready, starting recording with volume control...');
       this._showStatus('🎙️ Get ready to speak...', 'info');
 
-      // Start recording immediately - the countdown period will become the silence
-      this._startRecordingWithCountdown(stream, countdownSeconds);
+      // Start recording immediately with volume control during countdown
+      this._startRecordingWithVolumeControl(stream, countdownSeconds);
 
     } catch (error) {
       console.error('Failed to prepare microphone:', error);
@@ -402,6 +403,173 @@ class VoiceReplayCard extends HTMLElement {
       this._handleMicrophoneError(error);
       this._render();
     }
+  }
+
+  async _startRecordingWithVolumeControl(stream, countdownSeconds) {
+    try {
+      // Create audio context for volume control
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioContext.createMediaStreamSource(stream);
+      const gainNode = audioContext.createGain();
+      const destination = audioContext.createMediaStreamDestination();
+      
+      // Connect: source -> gain -> destination
+      source.connect(gainNode);
+      gainNode.connect(destination);
+      
+      // Set initial gain based on countdown
+      if (countdownSeconds > 0) {
+        gainNode.gain.value = 0; // Mute during countdown
+        console.log('🔇 Microphone gain set to 0 during countdown');
+      } else {
+        gainNode.gain.value = 0; // Start muted, will be raised when "ON AIR"
+        console.log('� Microphone gain set to 0 initially (will be raised on ON AIR)');
+      }
+      
+      // Use the processed stream for recording
+      const processedStream = destination.stream;
+      
+      // Set up MediaRecorder with processed stream
+      let mimeType = 'audio/webm';
+      const supportedTypes = [
+        'audio/mp4',           // Best compatibility and compression
+        'audio/mpeg',          // MP3 - universal support
+        'audio/webm;codecs=opus',  // Good compression, modern browsers
+        'audio/webm',          // Fallback WebM
+        'audio/wav'            // Largest but universal
+      ];
+
+      console.log('🎵 Checking browser MediaRecorder format support:');
+      for (const type of supportedTypes) {
+        if (MediaRecorder.isTypeSupported(type)) {
+          mimeType = type;
+          console.log('� Selected recording format:', mimeType);
+          break;
+        }
+      }
+
+      this._mediaRecorder = new MediaRecorder(processedStream, { mimeType });
+      this._recordedChunks = [];
+      this._audioContext = audioContext;
+      this._gainNode = gainNode;
+      this._originalStream = stream;
+
+      this._mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          this._recordedChunks.push(event.data);
+        }
+      };
+
+      this._mediaRecorder.onstop = () => {
+        const recordedBlob = new Blob(this._recordedChunks, { type: mimeType });
+        this._recordedAudio = recordedBlob;
+        this._audioMimeType = mimeType;
+        
+        // Clean up audio context and streams
+        if (this._audioContext) {
+          this._audioContext.close();
+          this._audioContext = null;
+          this._gainNode = null;
+        }
+        if (this._originalStream) {
+          this._originalStream.getTracks().forEach(track => track.stop());
+          this._originalStream = null;
+        }
+        
+        console.log('Recording stopped and audio blob created with format:', mimeType);
+
+        // Start processing phase
+        this._isProcessingRecording = true;
+        this._showStatus('🔄 Processing recording...', 'info');
+        this._render();
+
+        // Simulate processing time and then mark as ready
+        setTimeout(() => {
+          this._isProcessingRecording = false;
+          this._showStatus('✅ Recording ready to play!', 'success');
+          this._render();
+        }, 1000);
+      };
+
+      // Start recording immediately
+      this._mediaRecorder.start();
+      this._isRecording = true;
+      this._isPreparingToRecord = false;
+
+      if (countdownSeconds > 0) {
+        // Start countdown display while recording (but muted)
+        this._currentCountdown = countdownSeconds;
+        this._updateCountdownDisplay();
+
+        this._countdownTimer = setInterval(() => {
+          this._currentCountdown--;
+          if (this._currentCountdown > 0) {
+            this._updateCountdownDisplay();
+          } else {
+            // Countdown finished - show "ON AIR" and gradually raise volume
+            clearInterval(this._countdownTimer);
+            this._countdownTimer = null;
+            this._showStatus('Raising microphone volume...', 'warning');
+            this._render();
+            
+            // Gradually raise microphone volume over 0.3 seconds
+            this._raiseMicrophoneVolume(gainNode);
+          }
+        }, 1000);
+      } else {
+        // No countdown - show "ON AIR" and raise volume immediately
+        this._showStatus('Raising microphone volume...', 'warning');
+        this._render();
+        
+        // Always raise microphone volume when going ON AIR
+        this._raiseMicrophoneVolume(gainNode);
+      }
+
+    } catch (error) {
+      console.error('Failed to start recording with volume control:', error);
+      this._isPreparingToRecord = false;
+      this._isRecording = false;
+      this._handleMicrophoneError(error);
+      this._render();
+    }
+  }
+
+  _getMicrophoneGainDelay() {
+    // Try to get client-specific setting from localStorage first
+    const clientSpecificDelay = localStorage.getItem('voice-replay-microphone-gain-delay');
+    if (clientSpecificDelay !== null) {
+      const delay = parseFloat(clientSpecificDelay);
+      if (!isNaN(delay) && delay >= 0.1 && delay <= 2.0) {
+        console.log(`� Using client-specific microphone gain delay: ${delay}s`);
+        return delay;
+      }
+    }
+    
+    // Fallback to card configuration or default
+    const configDelay = this.config.microphone_gain_delay || 0.1;
+    const delay = Math.max(0.1, Math.min(2.0, configDelay));
+    console.log(`🔧 Using card config microphone gain delay: ${delay}s`);
+    return delay;
+  }
+
+  _raiseMicrophoneVolume(gainNode) {
+    console.log('🔊 Raising microphone volume after delay...');
+    
+    // Use client-specific delay if available, otherwise card config
+    const delayDuration = this._getMicrophoneGainDelay();
+    
+    console.log(`🔊 Volume jump delay: ${delayDuration} seconds`);
+    
+    // Wait for the delay, then jump directly to full volume (no ramping)
+    setTimeout(() => {
+      console.log('🔊 Jumping microphone gain directly to 1.0');
+      gainNode.gain.setValueAtTime(1.0, this._audioContext.currentTime);
+      
+      // Update status after jump
+      this._showStatus('🔴 ON AIR - Recording... Click to stop', 'success');
+      this._render();
+      console.log('🔊 Microphone volume jump complete - full recording active');
+    }, delayDuration * 1000);
   }
 
   async _startRecordingWithCountdown(stream, countdownSeconds) {
@@ -459,22 +627,28 @@ class VoiceReplayCard extends HTMLElement {
       this._isRecording = true;
       this._isPreparingToRecord = false;
 
-      // Start countdown display while recording
-      this._currentCountdown = countdownSeconds;
-      this._updateCountdownDisplay();
+      if (countdownSeconds > 0) {
+        // Start countdown display while recording
+        this._currentCountdown = countdownSeconds;
+        this._updateCountdownDisplay();
 
-      this._countdownTimer = setInterval(() => {
-        this._currentCountdown--;
-        if (this._currentCountdown > 0) {
-          this._updateCountdownDisplay();
-        } else {
-          // Countdown finished - show "ON AIR"
-          clearInterval(this._countdownTimer);
-          this._countdownTimer = null;
-          this._showStatus('🔴 ON AIR - Recording... Click to stop', 'success');
-          this._render();
-        }
-      }, 1000);
+        this._countdownTimer = setInterval(() => {
+          this._currentCountdown--;
+          if (this._currentCountdown > 0) {
+            this._updateCountdownDisplay();
+          } else {
+            // Countdown finished - show "ON AIR"
+            clearInterval(this._countdownTimer);
+            this._countdownTimer = null;
+            this._showStatus('🔴 ON AIR - Recording... Click to stop', 'success');
+            this._render();
+          }
+        }, 1000);
+      } else {
+        // No countdown - immediately show "ON AIR"
+        this._showStatus('🔴 ON AIR - Recording... Click to stop', 'success');
+        this._render();
+      }
 
     } catch (error) {
       console.error('Failed to start recording with countdown:', error);
@@ -636,6 +810,17 @@ class VoiceReplayCard extends HTMLElement {
     if (this._countdownTimer) {
       clearInterval(this._countdownTimer);
       this._countdownTimer = null;
+    }
+
+    // Clean up audio context and streams if they exist
+    if (this._audioContext) {
+      this._audioContext.close();
+      this._audioContext = null;
+      this._gainNode = null;
+    }
+    if (this._originalStream) {
+      this._originalStream.getTracks().forEach(track => track.stop());
+      this._originalStream = null;
     }
   }
 
@@ -855,6 +1040,40 @@ Edge: Site permissions → Microphone → Allow`;
     alert(helpMessage);
   }
 
+  _showClientSettings() {
+    const currentDelay = this._getMicrophoneGainDelay();
+    const isClientSpecific = localStorage.getItem('voice-replay-microphone-gain-delay') !== null;
+    
+    const settingsMessage = `⚙️ Client Microphone Settings
+
+📱 This Device: ${navigator.userAgent.includes('Android') ? 'Android' : 
+                  navigator.userAgent.includes('iPhone') ? 'iOS' : 'Desktop'}
+🎧 Current Delay: ${currentDelay}s ${isClientSpecific ? '(Client-specific)' : '(Default)'}
+
+🔧 About Microphone Delay:
+The microphone gain delay prevents clicking sounds when recording starts. Different audio hardware needs different timing:
+
+• 0.1s: Works for most USB/webcam microphones
+• 0.5s: Good for basic Bluetooth headsets  
+• 1.0s+: May be needed for some Bluetooth devices
+
+💾 This setting is stored locally on THIS device only. Each device (phone, computer, etc.) can have its own setting.
+
+🎯 Adjust Delay:`;
+
+    const newDelay = prompt(settingsMessage + '\n\nEnter new delay (0.1 to 2.0 seconds):', currentDelay.toString());
+    
+    if (newDelay !== null) {
+      const delay = parseFloat(newDelay);
+      if (!isNaN(delay) && delay >= 0.1 && delay <= 2.0) {
+        localStorage.setItem('voice-replay-microphone-gain-delay', delay.toString());
+        alert(`✅ Microphone delay set to ${delay}s for this device.\n\nThis setting will be remembered only on this device.`);
+      } else {
+        alert('❌ Invalid delay. Please enter a number between 0.1 and 2.0 seconds.');
+      }
+    }
+  }
+
   _render() {
     console.log('🎨 _render() called');
     console.log('🎨 _loadingMediaPlayers:', this._loadingMediaPlayers);
@@ -926,7 +1145,7 @@ Edge: Site permissions → Microphone → Allow`;
           ${this._mode === 'record' ? `
             <div class="record-section">
               <button class="record-button ${this._isRecording ? 'recording' : ''} ${this._isPreparingToRecord ? 'preparing' : ''}" id="record-btn">
-                ${this._isPreparingToRecord && this._currentCountdown > 0 ? this._currentCountdown : 
+                ${this._currentCountdown > 0 ? this._currentCountdown : 
                   this._isPreparingToRecord ? '🎤' :
                   this._isRecording ? '⏹️' : '🎤'}
               </button>
@@ -936,6 +1155,9 @@ Edge: Site permissions → Microphone → Allow`;
                 </button>
                 <button id="mic-help-btn" class="help-button" title="Microphone troubleshooting">
                   ❓ Mic Help
+                </button>
+                <button id="client-settings-btn" class="help-button" title="Client-specific microphone settings">
+                  ⚙️ Settings
                 </button>
               </div>
             </div>
@@ -1193,6 +1415,11 @@ Edge: Site permissions → Microphone → Allow`;
     const micHelpBtn = this.querySelector('#mic-help-btn');
     if (micHelpBtn) {
       micHelpBtn.addEventListener('click', () => this._showMicrophoneHelp());
+    }
+
+    const clientSettingsBtn = this.querySelector('#client-settings-btn');
+    if (clientSettingsBtn) {
+      clientSettingsBtn.addEventListener('click', () => this._showClientSettings());
     }
   }
 }

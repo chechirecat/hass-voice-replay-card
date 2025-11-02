@@ -111,6 +111,7 @@ title: Voice Replay
 type: custom:voice-replay-card
 title: My Voice Messages
 show_header: true
+microphone_gain_delay: 0.5  # Increase to 0.5-1.0 for Bluetooth headsets
 ```
 
 ## Configuration Options
@@ -120,6 +121,7 @@ show_header: true
 | `type` | string | **Required** | Must be `custom:voice-replay-card` |
 | `title` | string | `Voice Replay` | Card title |
 | `show_header` | boolean | `true` | Show/hide the card header |
+| `microphone_gain_delay` | number | `0.1` | Default delay in seconds before raising microphone volume during recording (0.1-2.0). Individual devices can override this using the ⚙️ Settings button. |
 
 ## How to Use
 
@@ -136,6 +138,19 @@ show_header: true
 3. Type your message in the text area
 4. Click "Generate & Play Speech"
 
+### Per-Device Audio Settings
+Each device (phone, computer, tablet) can have its own microphone delay settings:
+
+1. **Access Settings**: Click the "⚙️ Settings" button (next to "❓ Mic Help")
+2. **Adjust Delay**: Enter a value between 0.1-2.0 seconds
+3. **Device-Specific**: Settings are stored locally on each device
+4. **Priority**: Device settings override card configuration
+
+**Recommended values:**
+- **0.1s**: USB/webcam microphones (default)
+- **0.5s**: Basic Bluetooth headsets
+- **1.0s+**: Problematic Bluetooth devices
+
 ## Troubleshooting
 
 ### Card doesn't appear
@@ -151,6 +166,29 @@ show_header: true
 - Grant microphone permissions in your browser
 - HTTPS is required for microphone access
 - Check browser compatibility (modern browsers only)
+
+### Recording clicks or audio artifacts during countdown
+Some audio hardware (especially Bluetooth headsets) may cause clicking sounds at the beginning of recordings when using short countdown times. This is hardware-dependent behavior related to microphone stabilization timing:
+
+**Symptoms:**
+- Click or pop sound at the start of recordings 
+- Only occurs with certain microphones (commonly Bluetooth headsets)
+- More noticeable with short countdown times (0-2 seconds)
+
+**Solutions:**
+- **Increase countdown time**: Use 3+ seconds to allow hardware stabilization
+- **Try different audio devices**: USB/webcam microphones typically don't have this issue
+- **Adjust client-specific delay**: Click the "⚙️ Settings" button next to "❓ Mic Help" to set a device-specific delay
+- **Adjust card-wide delay**: Add `microphone_gain_delay: 0.5` (or higher) to your card configuration for all devices:
+  ```yaml
+  type: custom:voice-replay-card
+  title: Voice Replay
+  microphone_gain_delay: 1.0  # Default for all devices
+  ```
+
+**Note:** Client-specific settings (via ⚙️ Settings button) override card configuration and are remembered per device.
+
+**Technical details:** The card uses volume control to prevent clicks during countdown, but some Bluetooth audio hardware requires longer stabilization periods than others.
 
 ### TTS not working
 - Ensure you have TTS configured in Home Assistant
