@@ -7,7 +7,7 @@
  */
 
 // No build process needed - pure JavaScript implementation
-const CARD_VERSION = '0.6.0';
+const CARD_VERSION = '0.7.0';
 
 // Log card version
 console.info(
