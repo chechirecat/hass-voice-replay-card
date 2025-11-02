@@ -255,9 +255,9 @@ class VoiceReplayCard extends HTMLElement {
 
     } catch (error) {
       console.error('Failed to load TTS config:', error);
-      // Use default configuration
+      // Use default configuration  
       this._ttsConfig = {
-        prepend_silence_seconds: 3,
+        prepend_silence_seconds: 3,  // Default: 3 seconds when config unavailable
         volume_boost_enabled: true,
         volume_boost_amount: 0.1
       };
@@ -402,9 +402,17 @@ class VoiceReplayCard extends HTMLElement {
         await this._loadTTSConfig();
       }
 
-      // Get countdown duration from backend configuration
-      const countdownSeconds = this._ttsConfig?.prepend_silence_seconds || 3;
+      // Get countdown duration from backend configuration  
+      // Use ?? (nullish coalescing) to only fallback if value is null/undefined, not if it's 0
+      const countdownSeconds = this._ttsConfig?.prepend_silence_seconds ?? 3;
       console.log(`🎤 Using ${countdownSeconds} second countdown from backend config`);
+      console.log(`🔧 Raw backend value: ${this._ttsConfig?.prepend_silence_seconds}`);
+      
+      if (countdownSeconds === 0) {
+        console.log('🔧 No countdown - starting recording immediately');
+      } else {
+        console.log(`🔧 Will count down ${countdownSeconds} seconds before recording`);
+      }
 
       // First, check if we can access microphone and set it up
       this._isPreparingToRecord = true;
