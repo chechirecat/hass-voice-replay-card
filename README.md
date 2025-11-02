@@ -3,7 +3,7 @@
 [![GitHub Release](https://img.shields.io/github/release/chechirecat/hass-voice-replay-card.svg?style=flat-square)](https://github.com/chechirecat/hass-voice-replay-card/releases)
 [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/chechirecat/hass-voice-replay-card/test.yaml?style=flat-square&logo=github-actions)](https://github.com/chechirecat/hass-voice-replay-card/actions)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=flat-square)](https://hacs.xyz/docs/faq/custom_repositories)
-[![License](https://img.shields.io/github/license/chechirecat/hass-voice-replay-card.svg?style=flat-square)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
 🎨 A beautiful Lovelace card for the Voice Replay Home Assistant integration.
 
