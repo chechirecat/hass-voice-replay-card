@@ -41,6 +41,11 @@ class VoiceReplayCard extends HTMLElement {
     this._loadingMediaPlayers = false;
     this._microphoneChecked = false;
     this._lastAutoHelp = 0;
+    // Studio-style recording states
+    this._isPreparingToRecord = false;
+    this._countdownTimer = null;
+    this._currentCountdown = 0;
+    this._isProcessingRecording = false;
   }
 
   static getStubConfig() {
@@ -233,151 +238,6 @@ class VoiceReplayCard extends HTMLElement {
     }, 5000);
   }
 
-  async _startRecording() {
-    try {
-      // Check if we're in a secure context (HTTPS or localhost)
-      const isSecureContext = window.isSecureContext || 
-                             location.protocol === 'https:' || 
-                             location.hostname === 'localhost' ||
-                             location.hostname === '127.0.0.1';
-
-      if (!isSecureContext) {
-        const currentUrl = window.location.href;
-        const httpsUrl = currentUrl.replace('http://', 'https://');
-        this._showStatus(`🔒 HTTPS required for microphone access. Try: ${httpsUrl}`, 'error');
-        console.error('Microphone requires HTTPS. Current URL:', currentUrl, 'Try:', httpsUrl);
-        return;
-      }
-
-      // Check if microphone access is supported
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        this._showStatus('Microphone access not supported in this browser', 'error');
-        return;
-      }
-
-      // Check current permission state (but don't block - let getUserMedia trigger permission request)
-      let permissionState = 'unknown';
-      if (navigator.permissions) {
-        try {
-          const permission = await navigator.permissions.query({ name: 'microphone' });
-          permissionState = permission.state;
-          console.log('Microphone permission state:', permission.state);
-
-          if (permission.state === 'granted') {
-            this._showStatus('Microphone permission already granted, starting recording...', 'info');
-          } else if (permission.state === 'prompt') {
-            this._showStatus('Please allow microphone access when prompted...', 'info');
-          } else if (permission.state === 'denied') {
-            // Don't return early - let getUserMedia try anyway, it might trigger permission dialog
-            this._showStatus('Requesting microphone access...', 'info');
-          }
-        } catch (permError) {
-          console.warn('Could not check microphone permissions:', permError);
-          this._showStatus('Requesting microphone access...', 'info');
-        }
-      } else {
-        this._showStatus('Requesting microphone access...', 'info');
-      }
-
-      // Always try getUserMedia - this will trigger the permission dialog if needed
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          // Add more constraints for better compatibility
-          sampleRate: 44100,
-          channelCount: 1
-        }
-      });
-
-      // If we get here, permission was granted!
-      console.log('Microphone access granted successfully');
-
-      // Try different MIME types with preference order: MP4, MP3, WebM, WAV
-      let mimeType = 'audio/webm';
-      const supportedTypes = [
-        'audio/mp4',           // Best compatibility and compression
-        'audio/mpeg',          // MP3 - universal support
-        'audio/webm;codecs=opus',  // Good compression, modern browsers
-        'audio/webm',          // Fallback WebM
-        'audio/wav'            // Largest but universal
-      ];
-
-      console.log('🎵 Checking browser MediaRecorder format support:');
-      supportedTypes.forEach(type => {
-        const supported = MediaRecorder.isTypeSupported(type);
-        console.log(`🎵   ${type}: ${supported ? '✅ Supported' : '❌ Not supported'}`);
-      });
-
-      for (const type of supportedTypes) {
-        if (MediaRecorder.isTypeSupported(type)) {
-          mimeType = type;
-          console.log('🎵 Selected recording format:', mimeType);
-          break;
-        }
-      }
-
-      console.log('🎵 Final selected MIME type:', mimeType);
-
-      this._mediaRecorder = new MediaRecorder(stream, { mimeType });
-      this._recordedChunks = [];
-
-      this._mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          this._recordedChunks.push(event.data);
-        }
-      };
-
-      this._mediaRecorder.onstop = () => {
-        const recordedBlob = new Blob(this._recordedChunks, { type: mimeType });
-        this._recordedAudio = recordedBlob;
-        this._audioMimeType = mimeType; // Store the actual format used
-        stream.getTracks().forEach(track => track.stop());
-        console.log('Recording stopped and audio blob created with format:', mimeType);
-      };
-
-      this._mediaRecorder.start();
-      this._isRecording = true;
-      this._showStatus('🎤 Recording... Click to stop', 'success');
-
-    } catch (error) {
-      console.error('Microphone access error:', error);
-
-      let errorMessage = 'Failed to access microphone';
-      let showHelpButton = false;
-
-      if (error.name === 'NotAllowedError') {
-        errorMessage = 'Microphone access denied. Click "❓ Mic Help" for guidance.';
-        showHelpButton = true;
-      } else if (error.name === 'NotFoundError') {
-        errorMessage = 'No microphone found on this device.';
-      } else if (error.name === 'NotSupportedError') {
-        errorMessage = 'Microphone recording not supported in this browser.';
-        showHelpButton = true;
-      } else if (error.name === 'SecurityError') {
-        errorMessage = 'Microphone blocked by security policy. HTTPS required.';
-        showHelpButton = true;
-      } else if (error.name === 'AbortError') {
-        errorMessage = 'Microphone access was cancelled.';
-      } else if (error.name === 'OverconstrainedError') {
-        errorMessage = 'Microphone constraints not supported. Trying simpler settings...';
-        // Try again with simpler constraints
-        this._startRecordingSimple();
-        return;
-      }
-
-      this._showStatus(errorMessage, 'error');
-
-      // Auto-show help for certain error types
-      if (showHelpButton && this._shouldAutoShowHelp(error)) {
-        setTimeout(() => {
-          console.log('Auto-showing microphone help due to:', error.name);
-        }, 2000);
-      }
-    }
-  }
-
   // Fallback method with simpler audio constraints
   async _startRecordingSimple() {
     try {
@@ -425,11 +285,213 @@ class VoiceReplayCard extends HTMLElement {
     return error.name === 'NotAllowedError' || error.name === 'SecurityError';
   }
 
+  _toggleRecording() {
+    if (this._isRecording) {
+      this._stopRecording();
+    } else if (this._isPreparingToRecord) {
+      this._cancelCountdown();
+    } else {
+      this._startCountdown();
+    }
+  }
+
+  async _startCountdown() {
+    try {
+      // First, check if we can access microphone and set it up
+      this._isPreparingToRecord = true;
+      this._showStatus('🎤 Preparing microphone...', 'info');
+      this._render();
+
+      // Check if we're in a secure context (HTTPS or localhost)
+      const isSecureContext = window.isSecureContext || 
+                             location.protocol === 'https:' || 
+                             location.hostname === 'localhost' ||
+                             location.hostname === '127.0.0.1';
+
+      if (!isSecureContext) {
+        const currentUrl = window.location.href;
+        const httpsUrl = currentUrl.replace('http://', 'https://');
+        this._showStatus(`🔒 HTTPS required for microphone access. Try: ${httpsUrl}`, 'error');
+        console.error('Microphone requires HTTPS. Current URL:', currentUrl, 'Try:', httpsUrl);
+        this._isPreparingToRecord = false;
+        this._render();
+        return;
+      }
+
+      // Check if microphone access is supported
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        this._showStatus('Microphone access not supported in this browser', 'error');
+        this._isPreparingToRecord = false;
+        this._render();
+        return;
+      }
+
+      // Get microphone access and set it up
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 44100,
+          channelCount: 1
+        }
+      });
+
+      // Now that we have mic access, start the countdown
+      console.log('🎤 Microphone access granted, starting countdown...');
+      this._showStatus('🎙️ Get ready to speak...', 'info');
+
+      // Start 2-second countdown
+      this._currentCountdown = 2;
+      this._updateCountdownDisplay();
+
+      this._countdownTimer = setInterval(() => {
+        this._currentCountdown--;
+        if (this._currentCountdown > 0) {
+          this._updateCountdownDisplay();
+        } else {
+          // Countdown finished - start recording
+          clearInterval(this._countdownTimer);
+          this._countdownTimer = null;
+          this._startActualRecording(stream);
+        }
+      }, 1000);
+
+    } catch (error) {
+      console.error('Failed to prepare microphone:', error);
+      this._isPreparingToRecord = false;
+      this._handleMicrophoneError(error);
+      this._render();
+    }
+  }
+
+  _updateCountdownDisplay() {
+    this._showStatus(`🎯 Recording in ${this._currentCountdown}...`, 'info');
+    this._render();
+  }
+
+  _cancelCountdown() {
+    if (this._countdownTimer) {
+      clearInterval(this._countdownTimer);
+      this._countdownTimer = null;
+    }
+    this._isPreparingToRecord = false;
+    this._currentCountdown = 0;
+    this._showStatus('Recording cancelled', 'info');
+    this._render();
+  }
+
+  async _startActualRecording(stream) {
+    try {
+      // Try different MIME types with preference order: MP4, MP3, WebM, WAV
+      let mimeType = 'audio/webm';
+      const supportedTypes = [
+        'audio/mp4',           // Best compatibility and compression
+        'audio/mpeg',          // MP3 - universal support
+        'audio/webm;codecs=opus',  // Good compression, modern browsers
+        'audio/webm',          // Fallback WebM
+        'audio/wav'            // Largest but universal
+      ];
+
+      console.log('🎵 Checking browser MediaRecorder format support:');
+      supportedTypes.forEach(type => {
+        const supported = MediaRecorder.isTypeSupported(type);
+        console.log(`🎵   ${type}: ${supported ? '✅ Supported' : '❌ Not supported'}`);
+      });
+
+      for (const type of supportedTypes) {
+        if (MediaRecorder.isTypeSupported(type)) {
+          mimeType = type;
+          console.log('🎵 Selected recording format:', mimeType);
+          break;
+        }
+      }
+
+      console.log('🎵 Final selected MIME type:', mimeType);
+
+      this._mediaRecorder = new MediaRecorder(stream, { mimeType });
+      this._recordedChunks = [];
+
+      this._mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          this._recordedChunks.push(event.data);
+        }
+      };
+
+      this._mediaRecorder.onstop = () => {
+        const recordedBlob = new Blob(this._recordedChunks, { type: mimeType });
+        this._recordedAudio = recordedBlob;
+        this._audioMimeType = mimeType; // Store the actual format used
+        stream.getTracks().forEach(track => track.stop());
+        console.log('Recording stopped and audio blob created with format:', mimeType);
+        
+        // Start processing phase
+        this._isProcessingRecording = true;
+        this._showStatus('🔄 Processing recording...', 'info');
+        this._render();
+        
+        // Simulate processing time and then mark as ready
+        setTimeout(() => {
+          this._isProcessingRecording = false;
+          this._showStatus('✅ Recording ready to play!', 'success');
+          this._render();
+        }, 1000);
+      };
+
+      this._mediaRecorder.start();
+      this._isRecording = true;
+      this._isPreparingToRecord = false;
+      this._showStatus('🔴 ON AIR - Recording... Click to stop', 'success');
+      this._render();
+
+    } catch (error) {
+      console.error('Failed to start recording:', error);
+      this._isPreparingToRecord = false;
+      this._handleMicrophoneError(error);
+      this._render();
+    }
+  }
+
+  _handleMicrophoneError(error) {
+    let errorMessage = 'Failed to access microphone';
+    let showHelpButton = false;
+
+    if (error.name === 'NotAllowedError') {
+      errorMessage = 'Microphone access denied. Click "❓ Mic Help" for guidance.';
+      showHelpButton = true;
+    } else if (error.name === 'NotFoundError') {
+      errorMessage = 'No microphone found on this device.';
+    } else if (error.name === 'NotSupportedError') {
+      errorMessage = 'Microphone recording not supported in this browser.';
+      showHelpButton = true;
+    } else if (error.name === 'SecurityError') {
+      errorMessage = 'Microphone blocked by security policy. HTTPS required.';
+      showHelpButton = true;
+    } else if (error.name === 'AbortError') {
+      errorMessage = 'Microphone access was cancelled.';
+    } else if (error.name === 'OverconstrainedError') {
+      errorMessage = 'Microphone constraints not supported. Trying simpler settings...';
+      // Try again with simpler constraints
+      this._startRecordingSimple();
+      return;
+    }
+
+    this._showStatus(errorMessage, 'error');
+
+    // Auto-show help for certain error types
+    if (showHelpButton && this._shouldAutoShowHelp(error)) {
+      setTimeout(() => {
+        console.log('Auto-showing microphone help due to:', error.name);
+      }, 2000);
+    }
+  }
+
   _stopRecording() {
     if (this._mediaRecorder && this._isRecording) {
       this._mediaRecorder.stop();
       this._isRecording = false;
-      this._showStatus('Recording stopped', 'success');
+      // Note: _isProcessingRecording will be set to true in the onstop handler
+      // and then set to false after processing is complete
     }
   }
 
@@ -531,14 +593,6 @@ class VoiceReplayCard extends HTMLElement {
       }
     } catch (error) {
       this._showStatus(`Error: ${error.message}`, 'error');
-    }
-  }
-
-  _toggleRecording() {
-    if (this._isRecording) {
-      this._stopRecording();
-    } else {
-      this._startRecording();
     }
   }
 
@@ -727,12 +781,14 @@ Edge: Site permissions → Microphone → Allow`;
 
           ${this._mode === 'record' ? `
             <div class="record-section">
-              <button class="record-button ${this._isRecording ? 'recording' : ''}" id="record-btn">
-                ${this._isRecording ? '⏹️' : '🎤'}
+              <button class="record-button ${this._isRecording ? 'recording' : ''} ${this._isPreparingToRecord ? 'preparing' : ''}" id="record-btn">
+                ${this._isPreparingToRecord && this._currentCountdown > 0 ? this._currentCountdown : 
+                  this._isPreparingToRecord ? '🎤' :
+                  this._isRecording ? '⏹️' : '🎤'}
               </button>
               <div class="controls">
-                <button id="play-btn" ${!this._recordedAudio || this._isRecording ? 'disabled' : ''}>
-                  ▶️ Play Recording
+                <button id="play-btn" ${!this._recordedAudio || this._isRecording || this._isPreparingToRecord || this._isProcessingRecording ? 'disabled' : ''}>
+                  ${this._isProcessingRecording ? '⏳ Processing...' : '▶️ Play Recording'}
                 </button>
                 <button id="mic-help-btn" class="help-button" title="Microphone troubleshooting">
                   ❓ Mic Help
@@ -841,10 +897,21 @@ Edge: Site permissions → Microphone → Allow`;
           animation: pulse 1s infinite;
         }
 
+        .record-button.preparing {
+          background: #ff9800;
+          animation: countdown-pulse 1s infinite;
+        }
+
         @keyframes pulse {
           0% { transform: scale(1); }
           50% { transform: scale(1.1); }
           100% { transform: scale(1); }
+        }
+
+        @keyframes countdown-pulse {
+          0% { transform: scale(1); background: #ff9800; }
+          50% { transform: scale(1.05); background: #ffb74d; }
+          100% { transform: scale(1); background: #ff9800; }
         }
 
         .controls {
