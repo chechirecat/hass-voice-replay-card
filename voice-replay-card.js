@@ -337,8 +337,14 @@ class VoiceReplayCard extends HTMLElement {
         }
       });
 
-      // Now that we have mic access, start the countdown
-      console.log('🎤 Microphone access granted, starting countdown...');
+      console.log('🎤 Microphone stream obtained, waiting for readiness...');
+      this._showStatus('🔄 Waiting for microphone to stabilize...', 'info');
+
+      // Wait for microphone to be truly ready using multiple detection methods
+      await this._waitForMicrophoneReady(stream);
+
+      // Now that we know mic is ready, start the countdown
+      console.log('🎤 Microphone confirmed ready, starting countdown...');
       this._showStatus('🎙️ Get ready to speak...', 'info');
 
       // Start 2-second countdown
@@ -362,6 +368,95 @@ class VoiceReplayCard extends HTMLElement {
       this._isPreparingToRecord = false;
       this._handleMicrophoneError(error);
       this._render();
+    }
+  }
+
+  async _waitForMicrophoneReady(stream) {
+    return new Promise((resolve) => {
+      const audioTracks = stream.getAudioTracks();
+      if (audioTracks.length === 0) {
+        console.warn('No audio tracks found, proceeding anyway');
+        resolve();
+        return;
+      }
+
+      const audioTrack = audioTracks[0];
+      console.log('🎤 Audio track initial state:', audioTrack.readyState);
+
+      // Method 1: Check MediaStreamTrack readyState
+      if (audioTrack.readyState === 'live') {
+        console.log('🎤 Audio track already live, checking audio levels...');
+        this._checkAudioLevels(stream, resolve);
+        return;
+      }
+
+      // Method 2: Listen for track state changes
+      let readinessTimeout;
+      const onTrackReady = () => {
+        if (audioTrack.readyState === 'live') {
+          console.log('🎤 Audio track became live, checking audio levels...');
+          clearTimeout(readinessTimeout);
+          audioTrack.removeEventListener('unmute', onTrackReady);
+          this._checkAudioLevels(stream, resolve);
+        }
+      };
+
+      audioTrack.addEventListener('unmute', onTrackReady);
+
+      // Method 3: Fallback timeout (mic should be ready within 3 seconds max)
+      readinessTimeout = setTimeout(() => {
+        console.log('🎤 Microphone readiness timeout, proceeding anyway');
+        audioTrack.removeEventListener('unmute', onTrackReady);
+        resolve();
+      }, 3000);
+
+      // Trigger immediate check in case track is already ready
+      if (audioTrack.readyState === 'live') {
+        onTrackReady();
+      }
+    });
+  }
+
+  _checkAudioLevels(stream, resolve) {
+    // Use Web Audio API to monitor actual audio input levels
+    try {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      const microphone = audioContext.createMediaStreamSource(stream);
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      microphone.connect(analyser);
+      analyser.fftSize = 256;
+
+      let checkCount = 0;
+      const maxChecks = 20; // Check for up to 2 seconds (100ms intervals)
+      
+      const checkAudio = () => {
+        analyser.getByteFrequencyData(dataArray);
+        
+        // Calculate average audio level
+        const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
+        console.log(`🎤 Audio level check ${checkCount + 1}: ${average.toFixed(2)}`);
+
+        checkCount++;
+
+        // If we detect any audio activity or have checked enough times, consider ready
+        if (average > 1 || checkCount >= maxChecks) {
+          console.log('🎤 Microphone audio levels confirmed, ready to record');
+          audioContext.close();
+          resolve();
+        } else {
+          // Continue checking
+          setTimeout(checkAudio, 100);
+        }
+      };
+
+      // Start checking audio levels
+      setTimeout(checkAudio, 100);
+
+    } catch (audioError) {
+      console.warn('🎤 Could not check audio levels, proceeding anyway:', audioError);
+      resolve();
     }
   }
 
